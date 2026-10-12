@@ -2,7 +2,7 @@
 
 ## Branches and delivery
 
-- Start each nontrivial feature from an up-to-date `develop`: fetch `origin`, switch to `develop`, and pull with `--ff-only`. Preserve unrelated local work; use an isolated worktree when needed.
+- Start every feature and fix branch from an up-to-date `develop`: fetch `origin`, switch to `develop`, and pull with `--ff-only`. Preserve unrelated local work; use an isolated worktree when needed.
 - Create a focused `feature/<short-name>` branch before making changes. Keep each branch scoped to one feature or fix.
 - Validate the affected code, commit coherent changes, push the feature branch, and open a pull request targeting `develop`. Include the behavior change and validation results in the PR.
 - Release through a validated pull request from `develop` to `main`. Run the applicable tests and build checks before promotion.
