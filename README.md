@@ -57,7 +57,7 @@ Keep the sender app open. A foreground location notification is enabled where An
 
 Open http://localhost:8787/simulate.html, enter the local creator key and start. Open its private viewer link in another tab. The viewer prominently says **SIMULATION — NOT PHONE GPS**. Watch the marker/coordinates change, then stop the simulator: the viewer changes to ended and removes coordinates. Closing the simulator without stopping leaves the last point to age from live → stale → offline; its session expires after one hour.
 
-The viewer polls every five seconds and ages the displayed point between polls. Live means captured within 20 seconds, stale 20–60 seconds, and offline over 60 seconds. Offline is inferred from silence and is not a confirmed phone connection state. Connection failures show a separate retry message. The map requires internet; coordinate readings remain usable if the external map cannot load.
+The viewer polls every five seconds and ages the displayed point between polls. The map centers on the first position, then updates its marker without changing your pan or zoom. Use the small **Recenter** button to return to the latest position at the initial zoom level. Live means captured within 20 seconds, stale 20–60 seconds, and offline over 60 seconds. Offline is inferred from silence and is not a confirmed phone connection state. Connection failures show a separate retry message. The map requires internet; coordinate readings remain usable if the external map cannot load.
 
 ## Verification
 
@@ -84,6 +84,6 @@ cd backend
 ./node_modules/.bin/wrangler d1 execute rydah --local --command "DELETE FROM sessions WHERE expires_at <= CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
 ```
 
-OpenStreetMap receives the viewed map area; private API credentials are not sent to it. External Google Fonts loads the interface font. Both pages use `Referrer-Policy: no-referrer`. Local HTTP is only for development; debug Android permits cleartext networking. A shared public backend requires HTTPS and a new private creator secret.
+OpenStreetMap receives the viewed map area; private API credentials are not sent to it. External Google Fonts loads the interface font. Both pages use `Referrer-Policy: no-referrer`; map tile requests override this to send only the site origin for OpenStreetMap attribution of requests. Leaflet 1.9.4 is served locally from `backend/public/vendor/leaflet`. Local HTTP is only for development; debug Android permits cleartext networking. A shared public backend requires HTTPS and a new private creator secret.
 
 Nothing is deployed. Later, with the user's Cloudflare account: create a D1 database, replace the placeholder database ID in `backend/wrangler.jsonc`, apply the migration remotely, set `CREATOR_KEY` with `wrangler secret put`, deploy the Worker/static assets, and point the Android app at its HTTPS URL. Do not reuse the local demo key publicly.
