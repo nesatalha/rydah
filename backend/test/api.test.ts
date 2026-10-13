@@ -2,6 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { Miniflare } from 'miniflare';
 import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
 import worker from '../src/index.js';
 let mf: Miniflare; let db: D1Database;
 const env = () => ({DB:db, CREATOR_KEY:'test-key', ASSETS:{fetch:async()=>new Response('asset')}});
@@ -37,4 +38,29 @@ test('invalid durations are rejected without creating sessions',async()=>{
  }
  const afterRequests=await db.prepare('SELECT COUNT(*) AS count FROM sessions').first<{count:number}>();
  assert.equal(afterRequests?.count,beforeRequests?.count);
+});
+test('browser simulator creates a one-hour session through the real API',async()=>{
+ const elements=new Map<string,any>();
+ const element=(id:string)=>{
+  if(!elements.has(id)) elements.set(id,{value:id==='key'?'test-key':'',textContent:''});
+  return elements.get(id);
+ };
+ let created:Response|undefined;
+ runInNewContext(await readFile('public/simulate.js','utf8'),{
+  document:{getElementById:element},location:{origin:'https://demo.test'},AbortSignal,
+  setInterval:()=>0,
+  fetch:async(path:string,options:RequestInit)=>{
+   const response=await worker.fetch(new Request(`https://demo.test${path}`,options),env() as any);
+   if(path==='/api/sessions') created=response.clone();
+   return response;
+  },
+ });
+ const startedAt=Date.now();
+ await element('start').onclick();
+ assert.equal(element('error').textContent,'');
+ assert.equal(created?.status,201);
+ const session:any=await created!.json();
+ assert.ok(session.expiresAt>=startedAt+60*60_000);
+ assert.ok(session.expiresAt<=Date.now()+60*60_000);
+ assert.equal(element('link').href,`https://demo.test/view.html#id=${session.id}&token=${session.readToken}`);
 });
