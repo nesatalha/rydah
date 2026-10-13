@@ -100,7 +100,7 @@ class _AppShellState extends State<AppShell> {
     sender.dispose();
     sender = createSender();
     refresh();
-    await sender.start();
+    await sender.start(durationMinutes: 60);
   }
 
   Future<void> finishRide() async {
