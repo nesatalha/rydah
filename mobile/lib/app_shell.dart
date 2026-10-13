@@ -9,6 +9,7 @@ import 'ride_screen.dart';
 import 'history_screen.dart';
 import 'routes_screen.dart';
 import 'settings_screen.dart';
+import 'share_duration_dialog.dart';
 import 'ui_helpers.dart';
 
 class AppShell extends StatefulWidget {
@@ -35,6 +36,7 @@ class _AppShellState extends State<AppShell> {
   late final RideRecorder recorder;
   late LocationSender sender;
   int tab = 0;
+  bool _choosingShareDuration = false;
   Future<void> Function() get prepare => widget.prepare ?? gps.prepare;
   Stream<GeoPoint> Function() get points => widget.points ?? () => gps.stream;
   LocationSender createSender() => LocationSender(
@@ -95,12 +97,25 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> startSharing() async {
-    if (sender.session != null || sender.busy) return;
+    if (_choosingShareDuration || sender.session != null || sender.busy) return;
+    _choosingShareDuration = true;
+    int? durationMinutes;
+    try {
+      durationMinutes = await showShareDurationDialog(context);
+    } finally {
+      _choosingShareDuration = false;
+    }
+    if (!mounted ||
+        durationMinutes == null ||
+        sender.session != null ||
+        sender.busy) {
+      return;
+    }
     sender.removeListener(refresh);
     sender.dispose();
     sender = createSender();
     refresh();
-    await sender.start();
+    await sender.start(durationMinutes: durationMinutes);
   }
 
   Future<void> finishRide() async {

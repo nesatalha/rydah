@@ -31,12 +31,12 @@ class LocationSender extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> start() async {
+  Future<void> start({required int durationMinutes}) async {
     if (_starting != null || session != null || _stopping || _disposed) return;
     _stopRequested = false;
     state = 'Checking GPS…';
     _notify();
-    final run = _begin();
+    final run = _begin(durationMinutes: durationMinutes);
     _starting = run;
     try {
       await run;
@@ -46,13 +46,13 @@ class LocationSender extends ChangeNotifier {
     }
   }
 
-  Future<void> _begin() async {
+  Future<void> _begin({required int durationMinutes}) async {
     try {
       await prepare();
       if (_stopRequested || _disposed) return;
       state = 'Creating private session…';
       _notify();
-      session = await api.create();
+      session = await api.create(durationMinutes: durationMinutes);
       _seq = 0;
       lastUpload = null;
       latest = null;

@@ -53,9 +53,10 @@ class SharingApi {
     return response;
   }
 
-  Future<ShareSession> create() async {
+  Future<ShareSession> create({required int durationMinutes}) async {
     final r = await _request('POST', '/api/sessions', key, {
       'source': 'device',
+      'durationMinutes': durationMinutes,
     });
     final b = jsonDecode(r.body) as Map;
     return ShareSession(

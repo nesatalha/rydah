@@ -14,7 +14,8 @@ export default {
    if(!env.CREATOR_KEY || !token || await hash(token)!==await hash(env.CREATOR_KEY))return error('Unauthorized',401);
    let body:any;try{body=await request.json();}catch{return error('Invalid JSON',400);}
    if(!body || !['device','simulation'].includes(body.source))return error('Invalid source',400);
-   const id=crypto.randomUUID();const writeToken=secret();const readToken=secret();const expiresAt=now+3600000;
+   if(!Number.isSafeInteger(body.durationMinutes)||body.durationMinutes<1||body.durationMinutes>720)return error('Invalid duration',400);
+   const id=crypto.randomUUID();const writeToken=secret();const readToken=secret();const expiresAt=now+body.durationMinutes*60_000;
    await env.DB.prepare('INSERT INTO sessions (id,write_hash,read_hash,source,expires_at) VALUES (?,?,?,?,?)').bind(id,await hash(writeToken),await hash(readToken),body.source,expiresAt).run();
    return json({id,writeToken,readToken,expiresAt},201);
   }
