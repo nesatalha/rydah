@@ -5,6 +5,7 @@ import 'location_sender.dart';
 import 'route_models.dart';
 import 'ride_metrics.dart';
 import 'track_map.dart';
+import 'account_store.dart';
 
 class RideScreen extends StatelessWidget {
   const RideScreen({
@@ -14,7 +15,9 @@ class RideScreen extends StatelessWidget {
     required this.startSharing,
     required this.finishRide,
     this.showTiles = true,
+    this.profile,
   });
+  final LocalProfile? profile;
   final RideRecorder recorder;
   final LocationSender sender;
   final Future<void> Function() startSharing, finishRide;
@@ -47,6 +50,8 @@ class RideScreen extends StatelessWidget {
             .map((p) => RoutePoint(p.lat, p.lon, segment: p.segment))
             .toList(),
         showTiles: showTiles,
+        avatar: profile?.photo,
+        avatarName: profile?.name,
       ),
       const SizedBox(height: 12),
       section(context, 'Record this ride', [
@@ -87,30 +92,31 @@ class RideScreen extends StatelessWidget {
           ),
         if (sender.session != null)
           Text(
-            'Link expires ${sender.session!.expiresAt.toLocal().toString().substring(11, 16)}',
+            '${sender.audience == 'group' ? 'Group + private link' : 'Private link'} • ${sender.session!.expiresAt.difference(DateTime.now()).inMinutes.clamp(0, 240)} minutes remaining',
           ),
         const SizedBox(height: 12),
-        if (sender.session == null)
+        if (!sender.hasPending)
           OutlinedButton.icon(
             onPressed: sender.busy ? null : startSharing,
             icon: const Icon(Icons.sensors),
             label: const Text('Start sharing'),
           ),
-        if (sender.session != null) ...[
-          OutlinedButton.icon(
-            onPressed: () async {
-              await Clipboard.setData(
-                ClipboardData(text: sender.api.viewerLink(sender.session!)),
-              );
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Private viewer link copied')),
+        if (sender.hasPending) ...[
+          if (sender.session != null)
+            OutlinedButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(
+                  ClipboardData(text: sender.api.viewerLink(sender.session!)),
                 );
-              }
-            },
-            icon: const Icon(Icons.link),
-            label: const Text('Copy private link'),
-          ),
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Private viewer link copied')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.link),
+              label: const Text('Copy private link'),
+            ),
           TextButton.icon(
             onPressed: sender.busy
                 ? null
@@ -129,7 +135,7 @@ class RideScreen extends StatelessWidget {
                     }
                   },
             icon: const Icon(Icons.stop_circle_outlined),
-            label: const Text('Stop sharing'),
+            label: Text(sender.sharing ? 'Stop sharing' : 'Retry safe stop'),
           ),
         ],
         const Text(

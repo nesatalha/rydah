@@ -11,14 +11,9 @@ class FakeApi extends SharingApi {
   final uploadGate = Completer<void>();
   int uploads = 0;
   int stops = 0;
-  int? durationMinutes;
   bool failStop = false;
   @override
-  Future<ShareSession> create({required int durationMinutes}) {
-    this.durationMinutes = durationMinutes;
-    return creation.future;
-  }
-
+  Future<ShareSession> create() => creation.future;
   @override
   Future<void> upload(ShareSession s, int seq, GeoPoint point) async {
     uploads++;
@@ -39,21 +34,6 @@ ShareSession get session => ShareSession(
   DateTime.now().add(const Duration(hours: 1)),
 );
 void main() {
-  test('start passes the selected duration to session creation', () async {
-    final api = FakeApi();
-    final sender = LocationSender(
-      api: api,
-      prepare: () async {},
-      points: () => const Stream.empty(),
-    );
-    api.creation.complete(session);
-
-    await sender.start(durationMinutes: 120);
-
-    expect(api.durationMinutes, 120);
-    sender.dispose();
-  });
-
   test('stop during creation closes the newly created session', () async {
     final api = FakeApi();
     final points = StreamController<GeoPoint>.broadcast();
@@ -62,7 +42,7 @@ void main() {
       prepare: () async {},
       points: () => points.stream,
     );
-    final start = sender.start(durationMinutes: 60);
+    final start = sender.start();
     await Future<void>.delayed(Duration.zero);
     final stop = sender.stop();
     api.creation.complete(session);
@@ -85,7 +65,7 @@ void main() {
         cadence: const Duration(milliseconds: 10),
       );
       api.creation.complete(session);
-      await sender.start(durationMinutes: 60);
+      await sender.start();
       points.add(GeoPoint(41, 29, 10, DateTime.now()));
       await Future<void>.delayed(const Duration(milliseconds: 40));
       expect(api.uploads, 1);
@@ -109,7 +89,7 @@ void main() {
       prepare: () async => throw Exception('Location permission denied'),
       points: () => const Stream.empty(),
     );
-    await sender.start(durationMinutes: 60);
+    await sender.start();
     expect(sender.state, contains('Location permission denied'));
     expect(sender.session, isNull);
     sender.dispose();
@@ -131,7 +111,7 @@ void main() {
         DateTime.now().subtract(const Duration(seconds: 1)),
       ),
     );
-    await sender.start(durationMinutes: 60);
+    await sender.start();
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(sender.session, isNull);
     expect(sender.sharing, isFalse);
@@ -156,7 +136,7 @@ void main() {
         DateTime.now().add(const Duration(milliseconds: 50)),
       ),
     );
-    await sender.start(durationMinutes: 60);
+    await sender.start();
     points.add(GeoPoint(41, 29, 10, DateTime.now()));
     await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(api.uploads, 1);
@@ -178,7 +158,7 @@ void main() {
                 : const Stream.empty(),
             cadence: const Duration(hours: 1),
           );
-          await sender.start(durationMinutes: 60);
+          await sender.start();
           if (operation == 'stop') await sender.stop();
           await Future<void>.delayed(const Duration(milliseconds: 10));
           expect(sender.session, isNull);
@@ -188,7 +168,7 @@ void main() {
                 ? 'Expired — start a new share'
                 : 'Sharing ended or expired — start a new share',
           );
-          await sender.start(durationMinutes: 60);
+          await sender.start();
           expect(creations, 2);
           sender.dispose();
         },
@@ -216,7 +196,7 @@ void main() {
             prepare: () async {},
             points: () => const Stream.empty(),
           );
-          await sender.start(durationMinutes: 60);
+          await sender.start();
           await sender.stop();
           expect(sender.state, 'Stop failed — retry');
           expect(sender.session, isNotNull);
@@ -252,7 +232,7 @@ void main() {
           DateTime.now().subtract(const Duration(seconds: 1)),
         ),
       );
-      await sender.start(durationMinutes: 60);
+      await sender.start();
       await sender.stop();
       expect(sender.session, isNull);
       expect(sender.state, 'Expired — start a new share');

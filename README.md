@@ -16,9 +16,43 @@ cp .dev.vars.example .dev.vars
 npm run dev -- --ip 0.0.0.0
 ```
 
-The local creator key in `.dev.vars.example` is **rydah-local-demo-only**. It is a development-only value; the Worker has no public fallback key. `.dev.vars` is ignored. Creator keys and session tokens are only kept in app/page memory.
+The local creator key in `.dev.vars.example` is **rydah-local-demo-only**. It is a development-only value; the Worker has no public fallback key. `.dev.vars` is ignored. The creator key bootstraps groups and the legacy simulator. Device credentials are persisted on the phone; invitation and viewer pages keep their tokens in memory and strip URL fragments immediately.
 
 Backend and viewer: http://localhost:8787. Leave the backend terminal running. The local listener is accessible on your LAN when bound to `0.0.0.0`; use a private trusted network for this development setup.
+
+### Bootstrap a private group
+
+Apply both local migrations with the command above. Migration `0001_sessions.sql` remains unchanged; `0002_private_groups.sql` adds devices, profiles, private groups, invitations and sharing audiences.
+
+```bash
+curl -sS http://localhost:8787/api/admin/groups \
+  -H 'Authorization: Bearer rydah-local-demo-only' \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"Weekend riders"}'
+```
+
+The response contains `groupId` and an owner `invitation` with `id`, `token`, `expiresAt`, and `joinUrl`. Paste its full `joinUrl` into **Join group** in the Android app to enroll the owner. Opening `/join.html#token=…` in a browser only offers a copy button; it never enrolls a device or retrieves a group roster. Invitations expire after 24 hours and enroll one device. Owners create further invitations in the app, or through the device-authenticated endpoint:
+
+```bash
+# Set RYDAH_DEVICE_TOKEN to the enrolled owner's private device token locally.
+curl -sS http://localhost:8787/api/group/invitations \
+  -H "Authorization: Bearer $RYDAH_DEVICE_TOKEN" -X POST
+curl -sS http://localhost:8787/api/group/invitations \
+  -H "Authorization: Bearer $RYDAH_DEVICE_TOKEN"
+# Replace INVITATION_ID with the returned invitation ID to revoke it.
+curl -sS http://localhost:8787/api/group/invitations/INVITATION_ID \
+  -H "Authorization: Bearer $RYDAH_DEVICE_TOKEN" -X DELETE
+```
+
+Native clients generate and persist `deviceId` and `deviceToken` before `POST /api/enroll`; the invitation token is the bearer credential and the JSON body is `{deviceId,deviceToken,name}`. Device/session IDs use 1–128 ASCII letters, digits, underscores or hyphens (UUIDs are suitable). Tokens are 32 cryptographically random bytes encoded as 64 lowercase hexadecimal characters. An exact enrollment retry is allowed for the same active device; consumed invitations cannot enroll another device or restore revoked membership.
+
+A device that only shares private links registers itself without an invitation: `POST /api/devices` with `{deviceId,deviceToken,name}` and no bearer token returns its profile (201, or 200 for an exact retry; different credentials for the same ID get 409). It can then set its photo and create `viewer` sessions; `group` sessions still require membership, and the same device can join a group later with an invitation.
+
+Use the device token for `/api/me`, `/api/group`, and `POST /api/me/sessions`. Session creation accepts locally persisted `{id,readToken,writeToken,audience,durationMinutes}`; `audience` is `viewer` or `group`, and durations are 30, 60, 120 or 240 minutes (default 60). Only one session per device is active. Exact retries preserve its original expiry; a stopped, expired or conflicting session ID cannot start a new share. Viewer shares appear only through their private read link; group shares also appear in the member roster. A device can start a viewer share after leaving a group. Removal, leaving, or group deletion immediately ends all sessions that existed for the affected device.
+
+Profiles have names of 1–60 characters. `PUT /api/me/avatar` takes raw `image/png` bytes with a PNG signature, a 128×128 IHDR, and a maximum size of 65,536 bytes. Photos are fetched with authorization from group-member or session-avatar endpoints; no public photo URL or base64 photo field exists. Members can set or clear the group's meeting point. The owner can revoke invitations, remove members, or delete the group; members can leave, while the owner must delete the group.
+
+All API and photo responses use `no-store` and `no-referrer`; photos also use `nosniff`. Unconsumed expired invitations and expired session rows are removed by scheduled cleanup. Consumed invitations retain their hashed enrollment receipt for exact retries, and session ID claims remain to reject replay after location cleanup. Neither receipt contains a location.
 
 ## Run the actual Android app
 
@@ -28,9 +62,9 @@ cd mobile
 /Users/kurtulusn/fvm/default/bin/flutter run -d emulator-5554
 ```
 
-The app has Ride, History, Routes and Settings tabs. On **Ride**, tap **Start ride** to record locally, and **Start sharing** to choose a duration from 1 minute to 12 hours and create a private viewer link. In **Routes**, create a draft by adding stops to the map or import a GPX file; draft routes draw straight lines and do not provide turn-by-turn navigation. History, routes and recorded GPS points remain usable without the backend.
+The app has Ride, History, Routes, Group and Settings tabs. On **Ride**, tap **Start ride** to record locally, and **Start sharing** to choose an audience (**Private link** or **Group + private link**) and a duration (30 minutes, 1, 2 or 4 hours; default 1 hour). Sharing needs only a saved name; **Group + private link** appears once you have joined a group. In **Routes**, create a draft by adding stops to the map or import a GPX file; draft routes draw straight lines and do not provide turn-by-turn navigation. History, routes and recorded GPS points remain usable without the backend.
 
-The emulator's backend URL is `http://10.0.2.2:8787`. The development creator key is prefilled in **Settings**. Allow Android location access, then use **Copy private link** on the Ride tab and open it in a desktop browser. Emulator viewer links use `localhost` so they open on the development computer. For a remote viewer, use a backend URL reachable from that viewer (for example the computer's LAN address) before creating the session.
+The emulator's backend URL is `http://10.0.2.2:8787`. Allow Android location access, then use **Copy private link** on the Ride tab and open it in a desktop browser. Emulator viewer links use `localhost` so they open on the development computer. For a remote viewer, use a backend URL reachable from that viewer (for example the computer's LAN address) before creating the session.
 
 In emulator Extended Controls → Location, choose a position or route if GPS is not updating. Emulator locations are test positions; the same app obtains real device GPS on a physical phone.
 
@@ -53,6 +87,14 @@ Install the debug APK, open **Settings**, and set the backend URL to `http://loc
 
 Keep the sender app open. A foreground location notification is enabled where Android permits it, but background tracking is not guaranteed. Battery controls, permissions, backgrounding and connectivity can interrupt updates. There is no background-location permission in this demo. **Stop sharing** shows confirmation only after the server clears the stored point; on failure it retains the stop credential and offers retry.
 
+### Profile, group and recovery on the phone
+
+In **Settings**, choose a display name and optional photo and tap **Save local profile**. The photo is cropped to 128×128 PNG on the phone and stored with the name in local SQLite. The first time you start sharing, the app registers the device with the backend (no group or invitation needed) and uploads the name and photo, so your private-link viewer sees your photo as the map marker. Group members see it too once you join. Without a photo, markers show your initials. Profile editing never requests GPS.
+
+The owner opens **Developer: create a group**, enters a group name and the creator key (held in memory only, never prefilled), and taps **Create group and enroll**. In **Group**, the owner taps **Create and copy invitation** and sends the link to a friend, who pastes it into **Join group** in Settings. Joining never starts location sharing. The Group tab shows every member, photo markers for members sharing with the group, the meeting point (tap the map, add a label, **Save meeting point**) and **Fit group / recenter**. It refreshes about every five seconds only while open and in the foreground; when refresh fails, last-known positions are labeled offline and disappear when their share expires.
+
+Device credentials and in-progress share records live in Android secure storage, scoped to the backend URL, and are excluded from Android backup. Reinstalling or clearing the app loses that identity: the owner removes the old device and sends a new invitation. After leaving a group, being removed, or deleting the group, the next **Join group** uses a fresh device identity. If the app is killed while sharing, it does not resume uploads on restart; it stops the unfinished share and offers **Retry safe stop** if the server cannot be reached. The backend URL and new joins are locked until that stop completes.
+
 ## Optional two-tab simulation
 
 Open http://localhost:8787/simulate.html, enter the local creator key and start. Open its private viewer link in another tab. The viewer prominently says **SIMULATION — NOT PHONE GPS**. Watch the marker/coordinates change, then stop the simulator: the viewer changes to ended and removes coordinates. Closing the simulator without stopping leaves the last point to age from live → stale → offline; its session expires after one hour.
@@ -71,13 +113,13 @@ cd ../mobile
 /Users/kurtulusn/fvm/default/bin/flutter build apk --debug
 ```
 
-Backend tests use Miniflare D1 and execute the real SQL schema/updates. They cover reader/writer separation, lifecycle/coordinate deletion, sequence/observation ordering, expiry, malformed input, freshness and concurrent stop/upload. Flutter tests cover stop during creation, one upload in flight, failed-stop retry, permission errors, expiry without GPS or during an upload, and terminal HTTP 410 recovery. Network errors and nonterminal server errors retain the stop credential for retry.
+Backend tests use Miniflare D1 with both migrations. They cover group and invitation authorization, one-use enrollment and exact retries, profile/photo access, meeting points, audience isolation, membership/session revocation races, requested durations, idempotent creation, location ordering and freshness. Browser tests cover private photo authorization, safe sender names, blob cleanup and retry, legacy fallback, pan/zoom preservation, and invitation fragment handling. Flutter tests cover stop during creation, one upload in flight, failed-stop retry, permission errors, expiry without GPS or during an upload, and terminal HTTP 410 recovery. Network errors and nonterminal server errors retain the stop credential for retry.
 
 ## Privacy, storage and deployment
 
 Each session has independent random 256-bit read/write secrets. D1 stores only their SHA-256 hashes. Viewer links put the read secret in a URL fragment, parse it into memory, and immediately remove the fragment from browser history. API responses are not cached. Do not share the full private link beyond your intended viewers.
 
-One current point per session is retained; there is no route history. Stopping clears its coordinates. Sessions expire after the chosen duration, with a maximum active session of 12 hours; reads/writes then return 410 without coordinates. The scheduled hourly cleanup deletes expired rows, so expired rows may remain for around one additional hour when the deployed schedule runs. Local development does not automatically run cron. To manually delete expired local rows:
+One current point per session is retained; there is no route history. Stopping clears its coordinates. Device sessions expire after their chosen 30, 60, 120 or 240 minutes; the legacy creator/simulator route still uses one hour. Reads and writes after expiry return 410 without coordinates. The hourly scheduled cleanup deletes expired session rows, retaining a last point for at most roughly one hour beyond its expiry when the deployed schedule runs. Used session IDs remain as location-free replay protection. Local development does not automatically run cron. To manually delete expired local rows:
 
 ```bash
 cd backend

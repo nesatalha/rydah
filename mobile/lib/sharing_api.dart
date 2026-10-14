@@ -24,7 +24,7 @@ class SharingApiException implements Exception {
 class SharingApi {
   SharingApi(String url, this.key) : base = url.replaceAll(RegExp(r'/+$'), '');
   final String base, key;
-  Future<http.Response> _request(
+  Future<http.Response> request(
     String method,
     String path,
     String token, [
@@ -53,11 +53,8 @@ class SharingApi {
     return response;
   }
 
-  Future<ShareSession> create({required int durationMinutes}) async {
-    final r = await _request('POST', '/api/sessions', key, {
-      'source': 'device',
-      'durationMinutes': durationMinutes,
-    });
+  Future<ShareSession> create() async {
+    final r = await request('POST', '/api/sessions', key, {'source': 'device'});
     final b = jsonDecode(r.body) as Map;
     return ShareSession(
       b['id'],
@@ -68,7 +65,7 @@ class SharingApi {
   }
 
   Future<void> upload(ShareSession s, int seq, GeoPoint point) async {
-    await _request('PUT', '/api/sessions/${s.id}/location', s.writeToken, {
+    await request('PUT', '/api/sessions/${s.id}/location', s.writeToken, {
       'seq': seq,
       'lat': point.lat,
       'lon': point.lon,
@@ -78,7 +75,7 @@ class SharingApi {
   }
 
   Future<void> stop(ShareSession s) async {
-    await _request('DELETE', '/api/sessions/${s.id}', s.writeToken);
+    await request('DELETE', '/api/sessions/${s.id}', s.writeToken);
   }
 
   String viewerLink(ShareSession s) =>

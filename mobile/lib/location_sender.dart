@@ -1,15 +1,69 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'sharing_api.dart';
+import 'account_store.dart';
+import 'group_api.dart';
 
 class LocationSender extends ChangeNotifier {
   LocationSender({
     required this.api,
     required this.prepare,
     required this.points,
+    this.accountStore,
+    this.audience = 'viewer',
+    this.durationMinutes = 60,
     this.cadence = const Duration(seconds: 5),
   });
   final SharingApi api;
+  final AccountStore? accountStore;
+  String audience;
+  int durationMinutes;
+  DeviceAccount? get account =>
+      api is GroupApi ? (api as GroupApi).account : null;
+  bool get hasPending => session != null || account?.pending != null;
+  Future<void> _persist() async {
+    if (accountStore != null && account != null) {
+      await accountStore!.save(account!);
+    }
+  }
+
+  Future<void> recover() async {
+    if (account?.pending == null) return;
+    state = 'Unfinished share — stopping safely';
+    await stop();
+  }
+
+  Future<ShareSession> _create() async {
+    final group = api;
+    if (group is! GroupApi) return api.create();
+    if (account!.pending == null) {
+      account!.pending = {
+        'id': randomId(),
+        'readToken': randomToken(),
+        'writeToken': randomToken(),
+        'audience': audience,
+        'durationMinutes': durationMinutes,
+        'backend': api.base,
+        'stop': false,
+      };
+    }
+    await _persist();
+    final draft = account!.pending!;
+    final result = await group.createSession({
+      for (final k in [
+        'id',
+        'readToken',
+        'writeToken',
+        'audience',
+        'durationMinutes',
+      ])
+        k: draft[k],
+    });
+    draft['expiresAt'] = result.expiresAt.millisecondsSinceEpoch;
+    await _persist();
+    return result;
+  }
+
   final Future<void> Function() prepare;
   final Stream<GeoPoint> Function() points;
   final Duration cadence;
@@ -31,12 +85,12 @@ class LocationSender extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> start({required int durationMinutes}) async {
-    if (_starting != null || session != null || _stopping || _disposed) return;
+  Future<void> start() async {
+    if (_starting != null || hasPending || _stopping || _disposed) return;
     _stopRequested = false;
     state = 'Checking GPS…';
     _notify();
-    final run = _begin(durationMinutes: durationMinutes);
+    final run = _begin();
     _starting = run;
     try {
       await run;
@@ -46,13 +100,13 @@ class LocationSender extends ChangeNotifier {
     }
   }
 
-  Future<void> _begin({required int durationMinutes}) async {
+  Future<void> _begin() async {
     try {
       await prepare();
       if (_stopRequested || _disposed) return;
       state = 'Creating private session…';
       _notify();
-      session = await api.create(durationMinutes: durationMinutes);
+      session = await _create();
       _seq = 0;
       lastUpload = null;
       latest = null;
@@ -123,6 +177,10 @@ class LocationSender extends ChangeNotifier {
   Future<void> _finish(String message) async {
     _stopRequested = true;
     await _cancel();
+    if (account != null) {
+      account!.pending = null;
+      await _persist();
+    }
     session = null;
     latest = null;
     lastUpload = null;
@@ -156,13 +214,48 @@ class LocationSender extends ChangeNotifier {
     state = 'Stopping…';
     _notify();
     await _cancel();
+    if (account?.pending != null) {
+      account!.pending!['stop'] = true;
+      try {
+        await _persist();
+      } catch (e) {
+        state = 'Unable to save stop — retry: $e';
+        _stopping = false;
+        _notify();
+        return;
+      }
+    }
     final pending = _starting;
     if (pending != null) {
       await pending;
     }
+    if (session == null && account?.pending != null) {
+      try {
+        final draft = account!.pending!;
+        final expiry = draft['expiresAt'] as int?;
+        if (expiry != null && DateTime.now().millisecondsSinceEpoch >= expiry) {
+          await _finish('Expired — start a new share');
+        } else if (expiry != null) {
+          session = ShareSession(
+            draft['id'],
+            draft['writeToken'],
+            draft['readToken'],
+            DateTime.fromMillisecondsSinceEpoch(expiry),
+          );
+        } else {
+          session = await _create();
+        }
+      } catch (e) {
+        if (e is SharingApiException && e.statusCode == 410) {
+          await _finish('Expired — start a new share');
+        } else {
+          state = 'Stop failed — retry';
+        }
+      }
+    }
     if (session != null) {
       await _endRemote();
-    } else {
+    } else if (account?.pending == null && !state.startsWith('Expired')) {
       state = 'Ended';
     }
     _stopping = false;
@@ -174,8 +267,7 @@ class LocationSender extends ChangeNotifier {
     _disposed = true;
     _stopRequested = true;
     unawaited(_cancel());
-    final s = session;
-    if (s != null) unawaited(api.stop(s).catchError((_) {}));
+    unawaited(stop().catchError((_) {}));
     super.dispose();
   }
 }

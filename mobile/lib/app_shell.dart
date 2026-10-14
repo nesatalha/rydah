@@ -9,8 +9,11 @@ import 'ride_screen.dart';
 import 'history_screen.dart';
 import 'routes_screen.dart';
 import 'settings_screen.dart';
-import 'share_duration_dialog.dart';
 import 'ui_helpers.dart';
+import 'account_store.dart';
+import 'account_controller.dart';
+import 'group_controller.dart';
+import 'group_screen.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -19,8 +22,10 @@ class AppShell extends StatefulWidget {
     this.prepare,
     this.points,
     this.showTiles = true,
+    this.accountController,
   });
   final LocalStore store;
+  final AccountController? accountController;
   final Future<void> Function()? prepare;
   final Stream<GeoPoint> Function()? points;
   final bool showTiles;
@@ -28,31 +33,85 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   final gps = GpsSource();
-  final url = TextEditingController(text: 'http://10.0.2.2:8787');
-  final secret = TextEditingController(text: 'rydah-local-demo-only');
+  late final AccountController account;
+  GroupController? group;
+  String? accountError;
+  bool foreground = true, accountReady = false;
+  Timer? clock;
+  DeviceAccount? boundAccount;
+  Future<void> loadAccount() async {
+    try {
+      await account.load();
+      if (!mounted) return;
+      accountReady = true;
+      bindAccount();
+    } catch (e) {
+      if (mounted) {
+        setState(() => accountError = 'Secure identity unavailable: $e');
+      }
+    }
+  }
+
+  void bindAccount() {
+    if (!mounted) return;
+    if (account.account != null && !identical(boundAccount, account.account)) {
+      boundAccount = account.account;
+      sender.removeListener(refresh);
+      sender.dispose();
+      sender = createSender();
+      group?.dispose();
+      group = GroupController(
+        account.api,
+        onMembershipLost: account.membershipEnded,
+      )..addListener(refresh);
+      group!.visible(tab == 3 && foreground && account.account!.enrolled);
+      unawaited(sender.recover());
+    }
+    if (account.account?.enrolled != true) group?.visible(false);
+    refresh();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    foreground = state == AppLifecycleState.resumed;
+    group?.visible(tab == 3 && foreground && account.account?.enrolled == true);
+  }
+
   final historyKey = GlobalKey<HistoryScreenState>();
   late final RideRecorder recorder;
   late LocationSender sender;
   int tab = 0;
-  bool _choosingShareDuration = false;
   Future<void> Function() get prepare => widget.prepare ?? gps.prepare;
   Stream<GeoPoint> Function() get points => widget.points ?? () => gps.stream;
   LocationSender createSender() => LocationSender(
-    api: SharingApi(url.text.trim(), secret.text),
+    api: account.account == null
+        ? SharingApi(AccountController.defaultBackend, '')
+        : account.api,
+    accountStore: account.accounts,
     prepare: prepare,
     points: points,
   )..addListener(refresh);
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    account =
+        widget.accountController ??
+        AccountController(
+          SqlProfileRepository(widget.store),
+          AccountStore(const PlatformSecretStore()),
+        );
+    account.addListener(bindAccount);
     recorder = RideRecorder(
       store: widget.store,
       prepare: prepare,
       points: points,
     )..addListener(refresh);
     sender = createSender();
+    unawaited(loadAccount());
+    clock = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
     WidgetsBinding.instance.addPostFrameCallback((_) => recoverInterrupted());
   }
 
@@ -97,25 +156,82 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> startSharing() async {
-    if (_choosingShareDuration || sender.session != null || sender.busy) return;
-    _choosingShareDuration = true;
-    int? durationMinutes;
-    try {
-      durationMinutes = await showShareDurationDialog(context);
-    } finally {
-      _choosingShareDuration = false;
-    }
-    if (!mounted ||
-        durationMinutes == null ||
-        sender.session != null ||
-        sender.busy) {
+    if (sender.hasPending || sender.busy) return;
+    if (!accountReady || account.profile == null) {
+      setState(() => tab = 4);
+      await showError(
+        context,
+        StateError('Add your name (and optional photo) in Settings first.'),
+      );
       return;
     }
-    sender.removeListener(refresh);
-    sender.dispose();
-    sender = createSender();
-    refresh();
-    await sender.start(durationMinutes: durationMinutes);
+    final inGroup = account.account?.enrolled == true;
+    var audience = 'viewer';
+    var minutes = 60;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Start location sharing'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: audience,
+                decoration: const InputDecoration(labelText: 'Audience'),
+                items: [
+                  const DropdownMenuItem(
+                    value: 'viewer',
+                    child: Text('Private link'),
+                  ),
+                  if (inGroup)
+                    const DropdownMenuItem(
+                      value: 'group',
+                      child: Text('Group + private link'),
+                    ),
+                ],
+                onChanged: (v) => update(() => audience = v!),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: minutes,
+                decoration: const InputDecoration(labelText: 'Duration'),
+                items: const [
+                  DropdownMenuItem(value: 30, child: Text('30 minutes')),
+                  DropdownMenuItem(value: 60, child: Text('1 hour')),
+                  DropdownMenuItem(value: 120, child: Text('2 hours')),
+                  DropdownMenuItem(value: 240, child: Text('4 hours')),
+                ],
+                onChanged: (v) => update(() => minutes = v!),
+              ),
+              const Text(
+                'This explicitly starts GPS updates for the chosen audience. Recording remains independent.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Start sharing'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (go != true || !mounted) return;
+    try {
+      await account.ensureRegistered();
+    } catch (e) {
+      if (mounted) await showError(context, e);
+      return;
+    }
+    sender.audience = audience;
+    sender.durationMinutes = minutes;
+    await sender.start();
   }
 
   Future<void> finishRide() async {
@@ -141,8 +257,11 @@ class _AppShellState extends State<AppShell> {
     recorder.dispose();
     sender.dispose();
     unawaited(gps.dispose());
-    url.dispose();
-    secret.dispose();
+    clock?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    group?.dispose();
+    account.removeListener(bindAccount);
+    if (widget.accountController == null) account.dispose();
     super.dispose();
   }
 
@@ -177,6 +296,7 @@ class _AppShellState extends State<AppShell> {
           startSharing: startSharing,
           finishRide: finishRide,
           showTiles: widget.showTiles,
+          profile: account.profile,
         ),
         HistoryScreen(
           key: historyKey,
@@ -186,11 +306,35 @@ class _AppShellState extends State<AppShell> {
           showTiles: widget.showTiles,
         ),
         RoutesScreen(store: widget.store, showTiles: widget.showTiles),
-        SettingsScreen(
-          url: url,
-          secret: secret,
-          sharingActive: sender.session != null || sender.busy,
-        ),
+        if (group != null)
+          GroupScreen(
+            controller: group!,
+            showTiles: widget.showTiles,
+            onMembershipChanged: account.membershipEnded,
+          )
+        else
+          const Center(
+            child: Text('Save your profile and join a group in Settings.'),
+          ),
+        if (accountError != null)
+          ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              Text(accountError!),
+              FilledButton(
+                onPressed: loadAccount,
+                child: const Text('Retry secure storage'),
+              ),
+            ],
+          )
+        else if (!accountReady)
+          const Center(child: CircularProgressIndicator())
+        else
+          SettingsScreen(
+            key: ValueKey(account.account!.origin),
+            account: account,
+            sharingActive: sender.hasPending || sender.busy,
+          ),
       ],
     ),
     bottomNavigationBar: NavigationBar(
@@ -198,11 +342,15 @@ class _AppShellState extends State<AppShell> {
       onDestinationSelected: (next) {
         setState(() => tab = next);
         if (next == 1) historyKey.currentState?.refresh();
+        group?.visible(
+          next == 3 && foreground && account.account?.enrolled == true,
+        );
       },
       destinations: const [
         NavigationDestination(icon: Icon(Icons.two_wheeler), label: 'Ride'),
         NavigationDestination(icon: Icon(Icons.history), label: 'History'),
         NavigationDestination(icon: Icon(Icons.alt_route), label: 'Routes'),
+        NavigationDestination(icon: Icon(Icons.group_outlined), label: 'Group'),
         NavigationDestination(
           icon: Icon(Icons.settings_outlined),
           label: 'Settings',

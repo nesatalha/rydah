@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'person_avatar.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'route_models.dart';
@@ -10,10 +12,14 @@ class TrackMap extends StatelessWidget {
     this.stops = const [],
     this.onTap,
     this.showTiles = true,
+    this.avatar,
+    this.avatarName,
   });
   final List<RoutePoint> points, stops;
   final void Function(LatLng)? onTap;
   final bool showTiles;
+  final Uint8List? avatar;
+  final String? avatarName;
   @override
   Widget build(BuildContext context) {
     final positions = points.map((p) => LatLng(p.lat, p.lon)).toList();
@@ -80,9 +86,11 @@ class TrackMap extends StatelessWidget {
                 if (stops.isEmpty && positions.isNotEmpty)
                   Marker(
                     point: positions.last,
-                    width: 28,
-                    height: 28,
-                    child: const Icon(Icons.my_location, color: Colors.white),
+                    width: 42,
+                    height: 42,
+                    child: avatarName == null
+                        ? const Icon(Icons.my_location, color: Colors.white)
+                        : PersonAvatar(name: avatarName!, photo: avatar),
                   ),
               ],
             ),
