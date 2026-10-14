@@ -28,7 +28,7 @@ cd mobile
 /Users/kurtulusn/fvm/default/bin/flutter run -d emulator-5554
 ```
 
-The app has Ride, History, Routes and Settings tabs. On **Ride**, tap **Start ride** to record locally, and **Start sharing** to create a one-hour private viewer link. In **Routes**, create a draft by adding stops to the map or import a GPX file; draft routes draw straight lines and do not provide turn-by-turn navigation. History, routes and recorded GPS points remain usable without the backend.
+The app has Ride, History, Routes and Settings tabs. On **Ride**, tap **Start ride** to record locally, and **Start sharing** to choose a duration from 1 minute to 12 hours and create a private viewer link. In **Routes**, create a draft by adding stops to the map or import a GPX file; draft routes draw straight lines and do not provide turn-by-turn navigation. History, routes and recorded GPS points remain usable without the backend.
 
 The emulator's backend URL is `http://10.0.2.2:8787`. The development creator key is prefilled in **Settings**. Allow Android location access, then use **Copy private link** on the Ride tab and open it in a desktop browser. Emulator viewer links use `localhost` so they open on the development computer. For a remote viewer, use a backend URL reachable from that viewer (for example the computer's LAN address) before creating the session.
 
@@ -77,7 +77,7 @@ Backend tests use Miniflare D1 and execute the real SQL schema/updates. They cov
 
 Each session has independent random 256-bit read/write secrets. D1 stores only their SHA-256 hashes. Viewer links put the read secret in a URL fragment, parse it into memory, and immediately remove the fragment from browser history. API responses are not cached. Do not share the full private link beyond your intended viewers.
 
-One current point per session is retained; there is no route history. Stopping clears its coordinates. Sessions expire after one hour; reads/writes then return 410 without coordinates. The hourly scheduled cleanup deletes expired rows, limiting retention to less than two hours when the deployed schedule runs. Local development does not automatically run cron. To manually delete expired local rows:
+One current point per session is retained; there is no route history. Stopping clears its coordinates. Sessions expire after the chosen duration, with a maximum active session of 12 hours; reads/writes then return 410 without coordinates. The scheduled hourly cleanup deletes expired rows, so expired rows may remain for around one additional hour when the deployed schedule runs. Local development does not automatically run cron. To manually delete expired local rows:
 
 ```bash
 cd backend
