@@ -1,5 +1,7 @@
 # Agent Workflow Implementation Plan
 
+> **Status:** Implemented as the repository's `AGENTS.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make the Rydah multi-agent and Git workflow apply automatically to future Codex threads in this repository.
