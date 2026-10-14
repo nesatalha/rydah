@@ -46,6 +46,8 @@ curl -sS http://localhost:8787/api/group/invitations/INVITATION_ID \
 
 Native clients generate and persist `deviceId` and `deviceToken` before `POST /api/enroll`; the invitation token is the bearer credential and the JSON body is `{deviceId,deviceToken,name}`. Device/session IDs use 1–128 ASCII letters, digits, underscores or hyphens (UUIDs are suitable). Tokens are 32 cryptographically random bytes encoded as 64 lowercase hexadecimal characters. An exact enrollment retry is allowed for the same active device; consumed invitations cannot enroll another device or restore revoked membership.
 
+A device that only shares private links registers itself without an invitation: `POST /api/devices` with `{deviceId,deviceToken,name}` and no bearer token returns its profile (201, or 200 for an exact retry; different credentials for the same ID get 409). It can then set its photo and create `viewer` sessions; `group` sessions still require membership, and the same device can join a group later with an invitation.
+
 Use the device token for `/api/me`, `/api/group`, and `POST /api/me/sessions`. Session creation accepts locally persisted `{id,readToken,writeToken,audience,durationMinutes}`; `audience` is `viewer` or `group`, and durations are 30, 60, 120 or 240 minutes (default 60). Only one session per device is active. Exact retries preserve its original expiry; a stopped, expired or conflicting session ID cannot start a new share. Viewer shares appear only through their private read link; group shares also appear in the member roster. A device can start a viewer share after leaving a group. Removal, leaving, or group deletion immediately ends all sessions that existed for the affected device.
 
 Profiles have names of 1–60 characters. `PUT /api/me/avatar` takes raw `image/png` bytes with a PNG signature, a 128×128 IHDR, and a maximum size of 65,536 bytes. Photos are fetched with authorization from group-member or session-avatar endpoints; no public photo URL or base64 photo field exists. Members can set or clear the group's meeting point. The owner can revoke invitations, remove members, or delete the group; members can leave, while the owner must delete the group.
@@ -60,9 +62,9 @@ cd mobile
 /Users/kurtulusn/fvm/default/bin/flutter run -d emulator-5554
 ```
 
-The app has Ride, History, Routes and Settings tabs. On **Ride**, tap **Start ride** to record locally, and **Start sharing** to create a one-hour private viewer link. In **Routes**, create a draft by adding stops to the map or import a GPX file; draft routes draw straight lines and do not provide turn-by-turn navigation. History, routes and recorded GPS points remain usable without the backend.
+The app has Ride, History, Routes, Group and Settings tabs. On **Ride**, tap **Start ride** to record locally, and **Start sharing** to choose an audience (**Private link** or **Group + private link**) and a duration (30 minutes, 1, 2 or 4 hours; default 1 hour). Sharing needs only a saved name; **Group + private link** appears once you have joined a group. In **Routes**, create a draft by adding stops to the map or import a GPX file; draft routes draw straight lines and do not provide turn-by-turn navigation. History, routes and recorded GPS points remain usable without the backend.
 
-The emulator's backend URL is `http://10.0.2.2:8787`. The development creator key is prefilled in **Settings**. Allow Android location access, then use **Copy private link** on the Ride tab and open it in a desktop browser. Emulator viewer links use `localhost` so they open on the development computer. For a remote viewer, use a backend URL reachable from that viewer (for example the computer's LAN address) before creating the session.
+The emulator's backend URL is `http://10.0.2.2:8787`. Allow Android location access, then use **Copy private link** on the Ride tab and open it in a desktop browser. Emulator viewer links use `localhost` so they open on the development computer. For a remote viewer, use a backend URL reachable from that viewer (for example the computer's LAN address) before creating the session.
 
 In emulator Extended Controls → Location, choose a position or route if GPS is not updating. Emulator locations are test positions; the same app obtains real device GPS on a physical phone.
 
@@ -84,6 +86,14 @@ adb reverse tcp:8787 tcp:8787
 Install the debug APK, open **Settings**, and set the backend URL to `http://localhost:8787`. That URL is forwarded from the phone to the development computer. A viewer on the same computer uses localhost; a different person's browser needs a shared reachable backend, which this local-only setup does not provide. Alternatively, use the computer's LAN IP from a phone on the same Wi-Fi network. Production deployment is deferred.
 
 Keep the sender app open. A foreground location notification is enabled where Android permits it, but background tracking is not guaranteed. Battery controls, permissions, backgrounding and connectivity can interrupt updates. There is no background-location permission in this demo. **Stop sharing** shows confirmation only after the server clears the stored point; on failure it retains the stop credential and offers retry.
+
+### Profile, group and recovery on the phone
+
+In **Settings**, choose a display name and optional photo and tap **Save local profile**. The photo is cropped to 128×128 PNG on the phone and stored with the name in local SQLite. The first time you start sharing, the app registers the device with the backend (no group or invitation needed) and uploads the name and photo, so your private-link viewer sees your photo as the map marker. Group members see it too once you join. Without a photo, markers show your initials. Profile editing never requests GPS.
+
+The owner opens **Developer: create a group**, enters a group name and the creator key (held in memory only, never prefilled), and taps **Create group and enroll**. In **Group**, the owner taps **Create and copy invitation** and sends the link to a friend, who pastes it into **Join group** in Settings. Joining never starts location sharing. The Group tab shows every member, photo markers for members sharing with the group, the meeting point (tap the map, add a label, **Save meeting point**) and **Fit group / recenter**. It refreshes about every five seconds only while open and in the foreground; when refresh fails, last-known positions are labeled offline and disappear when their share expires.
+
+Device credentials and in-progress share records live in Android secure storage, scoped to the backend URL, and are excluded from Android backup. Reinstalling or clearing the app loses that identity: the owner removes the old device and sends a new invitation. After leaving a group, being removed, or deleting the group, the next **Join group** uses a fresh device identity. If the app is killed while sharing, it does not resume uploads on restart; it stops the unfinished share and offers **Retry safe stop** if the server cannot be reached. The backend URL and new joins are locked until that stop completes.
 
 ## Optional two-tab simulation
 

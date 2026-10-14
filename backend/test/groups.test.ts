@@ -268,3 +268,28 @@ test('concurrent exact session retries succeed and competing sessions preserve o
     const competing = await Promise.all([call('/api/me/sessions', 'POST', g.owner.deviceToken, {...input, id: crypto.randomUUID()}), call('/api/me/sessions', 'POST', g.owner.deviceToken, {...input, id: crypto.randomUUID()})]);
     assert.deepEqual(competing.map(r => r.status).sort(), [201, 409]);
 });
+test('devices register without an invitation and share a private link without a group', async () => {
+    const d = device();
+    const registered = await data(await call('/api/devices', 'POST', '', d), 201);
+    assert.equal(registered.deviceId, d.deviceId);
+    assert.equal(registered.groupId, null);
+    assert.equal(JSON.stringify(registered).includes(d.deviceToken), false);
+    // An exact retry after a lost response returns the same identity; other credentials conflict.
+    assert.equal((await data(await call('/api/devices', 'POST', '', d))).deviceId, d.deviceId);
+    assert.equal((await call('/api/devices', 'POST', '', { ...d, deviceToken: credential() })).status, 409);
+    assert.equal((await call('/api/devices', 'POST', '', { ...d, deviceToken: 'short' })).status, 400);
+    assert.equal((await call('/api/devices', 'POST', '', { ...d, name: '  ' })).status, 400);
+    assert.equal((await call('/api/me/avatar', 'PUT', d.deviceToken, png())).status, 200);
+    const s = await session(d, 'viewer');
+    assert.equal((await upload(s)).status, 200);
+    const view = await data(await call(`/api/sessions/${s.id}`, 'GET', s.readToken));
+    assert.equal(view.sender.name, 'Rider');
+    assert.equal((await call(`/api/sessions/${s.id}/avatar`, 'GET', s.readToken)).status, 200);
+    assert.equal((await call('/api/me/sessions', 'POST', d.deviceToken, {
+        id: crypto.randomUUID(), readToken: credential(), writeToken: credential(), audience: 'group', durationMinutes: 60
+    })).status, 403);
+    // A registered device can still join a group later with an invitation.
+    const g = await group();
+    const joined = await enroll(await invite(g), d);
+    assert.equal(joined.role, 'member');
+});

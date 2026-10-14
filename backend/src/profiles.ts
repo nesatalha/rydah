@@ -1,5 +1,20 @@
-import { body, bytes, device, empty, Env, fail, json, membership, profile, text } from './core.js';
+import { body, bytes, device, Device, empty, Env, fail, hash, json, membership, profile, text, validId, validToken } from './core.js';
 export async function profiles(request: Request, env: Env, path: string): Promise<Response | null> {
+    if (path === '/api/devices' && request.method === 'POST') {
+        // Self-registration lets a device share a private link without joining a group.
+        const input = await body(request);
+        const name = text(input.name, 60);
+        if (!validId(input.deviceId) || !validToken(input.deviceToken)) {
+            fail('Invalid device credentials', 400);
+        }
+        const tokenHash = await hash(input.deviceToken);
+        const inserted = await env.DB.prepare('INSERT OR IGNORE INTO devices(id,token_hash,name,created_at) VALUES(?,?,?,?)').bind(input.deviceId, tokenHash, name, Date.now()).run();
+        const d = await env.DB.prepare('SELECT id,token_hash,name,avatar_version FROM devices WHERE id=?').bind(input.deviceId).first<Device>();
+        if (!d || d.token_hash !== tokenHash) {
+            fail('Device credentials conflict', 409);
+        }
+        return json(profile(d, await membership(env, d.id)), inserted.meta.changes ? 201 : 200);
+    }
     if (path !== '/api/me' && path !== '/api/me/avatar') {
         return null;
     }
