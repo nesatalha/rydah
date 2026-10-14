@@ -16,9 +16,41 @@ cp .dev.vars.example .dev.vars
 npm run dev -- --ip 0.0.0.0
 ```
 
-The local creator key in `.dev.vars.example` is **rydah-local-demo-only**. It is a development-only value; the Worker has no public fallback key. `.dev.vars` is ignored. Creator keys and session tokens are only kept in app/page memory.
+The local creator key in `.dev.vars.example` is **rydah-local-demo-only**. It is a development-only value; the Worker has no public fallback key. `.dev.vars` is ignored. The creator key bootstraps groups and the legacy simulator. Device credentials are persisted on the phone; invitation and viewer pages keep their tokens in memory and strip URL fragments immediately.
 
 Backend and viewer: http://localhost:8787. Leave the backend terminal running. The local listener is accessible on your LAN when bound to `0.0.0.0`; use a private trusted network for this development setup.
+
+### Bootstrap a private group
+
+Apply both local migrations with the command above. Migration `0001_sessions.sql` remains unchanged; `0002_private_groups.sql` adds devices, profiles, private groups, invitations and sharing audiences.
+
+```bash
+curl -sS http://localhost:8787/api/admin/groups \
+  -H 'Authorization: Bearer rydah-local-demo-only' \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"Weekend riders"}'
+```
+
+The response contains `groupId` and an owner `invitation` with `id`, `token`, `expiresAt`, and `joinUrl`. Paste its full `joinUrl` into **Join group** in the Android app to enroll the owner. Opening `/join.html#token=…` in a browser only offers a copy button; it never enrolls a device or retrieves a group roster. Invitations expire after 24 hours and enroll one device. Owners create further invitations in the app, or through the device-authenticated endpoint:
+
+```bash
+# Set RYDAH_DEVICE_TOKEN to the enrolled owner's private device token locally.
+curl -sS http://localhost:8787/api/group/invitations \
+  -H "Authorization: Bearer $RYDAH_DEVICE_TOKEN" -X POST
+curl -sS http://localhost:8787/api/group/invitations \
+  -H "Authorization: Bearer $RYDAH_DEVICE_TOKEN"
+# Replace INVITATION_ID with the returned invitation ID to revoke it.
+curl -sS http://localhost:8787/api/group/invitations/INVITATION_ID \
+  -H "Authorization: Bearer $RYDAH_DEVICE_TOKEN" -X DELETE
+```
+
+Native clients generate and persist `deviceId` and `deviceToken` before `POST /api/enroll`; the invitation token is the bearer credential and the JSON body is `{deviceId,deviceToken,name}`. Device/session IDs use 1–128 ASCII letters, digits, underscores or hyphens (UUIDs are suitable). Tokens are 32 cryptographically random bytes encoded as 64 lowercase hexadecimal characters. An exact enrollment retry is allowed for the same active device; consumed invitations cannot enroll another device or restore revoked membership.
+
+Use the device token for `/api/me`, `/api/group`, and `POST /api/me/sessions`. Session creation accepts locally persisted `{id,readToken,writeToken,audience,durationMinutes}`; `audience` is `viewer` or `group`, and durations are 30, 60, 120 or 240 minutes (default 60). Only one session per device is active. Exact retries preserve its original expiry; a stopped, expired or conflicting session ID cannot start a new share. Viewer shares appear only through their private read link; group shares also appear in the member roster. A device can start a viewer share after leaving a group. Removal, leaving, or group deletion immediately ends all sessions that existed for the affected device.
+
+Profiles have names of 1–60 characters. `PUT /api/me/avatar` takes raw `image/png` bytes with a PNG signature, a 128×128 IHDR, and a maximum size of 65,536 bytes. Photos are fetched with authorization from group-member or session-avatar endpoints; no public photo URL or base64 photo field exists. Members can set or clear the group's meeting point. The owner can revoke invitations, remove members, or delete the group; members can leave, while the owner must delete the group.
+
+All API and photo responses use `no-store` and `no-referrer`; photos also use `nosniff`. Unconsumed expired invitations and expired session rows are removed by scheduled cleanup. Consumed invitations retain their hashed enrollment receipt for exact retries, and session ID claims remain to reject replay after location cleanup. Neither receipt contains a location.
 
 ## Run the actual Android app
 
@@ -71,13 +103,13 @@ cd ../mobile
 /Users/kurtulusn/fvm/default/bin/flutter build apk --debug
 ```
 
-Backend tests use Miniflare D1 and execute the real SQL schema/updates. They cover reader/writer separation, lifecycle/coordinate deletion, sequence/observation ordering, expiry, malformed input, freshness and concurrent stop/upload. Flutter tests cover stop during creation, one upload in flight, failed-stop retry, permission errors, expiry without GPS or during an upload, and terminal HTTP 410 recovery. Network errors and nonterminal server errors retain the stop credential for retry.
+Backend tests use Miniflare D1 with both migrations. They cover group and invitation authorization, one-use enrollment and exact retries, profile/photo access, meeting points, audience isolation, membership/session revocation races, requested durations, idempotent creation, location ordering and freshness. Browser tests cover private photo authorization, safe sender names, blob cleanup and retry, legacy fallback, pan/zoom preservation, and invitation fragment handling. Flutter tests cover stop during creation, one upload in flight, failed-stop retry, permission errors, expiry without GPS or during an upload, and terminal HTTP 410 recovery. Network errors and nonterminal server errors retain the stop credential for retry.
 
 ## Privacy, storage and deployment
 
 Each session has independent random 256-bit read/write secrets. D1 stores only their SHA-256 hashes. Viewer links put the read secret in a URL fragment, parse it into memory, and immediately remove the fragment from browser history. API responses are not cached. Do not share the full private link beyond your intended viewers.
 
-One current point per session is retained; there is no route history. Stopping clears its coordinates. Sessions expire after one hour; reads/writes then return 410 without coordinates. The hourly scheduled cleanup deletes expired rows, limiting retention to less than two hours when the deployed schedule runs. Local development does not automatically run cron. To manually delete expired local rows:
+One current point per session is retained; there is no route history. Stopping clears its coordinates. Device sessions expire after their chosen 30, 60, 120 or 240 minutes; the legacy creator/simulator route still uses one hour. Reads and writes after expiry return 410 without coordinates. The hourly scheduled cleanup deletes expired session rows, retaining a last point for at most roughly one hour beyond its expiry when the deployed schedule runs. Used session IDs remain as location-free replay protection. Local development does not automatically run cron. To manually delete expired local rows:
 
 ```bash
 cd backend

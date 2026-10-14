@@ -1,0 +1,14 @@
+CREATE TABLE devices (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, avatar BLOB, avatar_version INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+CREATE TABLE groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, revoked_at INTEGER, meeting_lat REAL, meeting_lon REAL, meeting_label TEXT, meeting_updated_at INTEGER, meeting_updated_by TEXT);
+CREATE TABLE memberships (group_id TEXT NOT NULL REFERENCES groups(id), device_id TEXT NOT NULL REFERENCES devices(id), role TEXT NOT NULL CHECK(role IN ('owner','member')), revoked_at INTEGER, PRIMARY KEY(group_id,device_id));
+CREATE UNIQUE INDEX one_active_membership ON memberships(device_id) WHERE revoked_at IS NULL;
+CREATE TABLE invitations (id TEXT PRIMARY KEY, group_id TEXT NOT NULL REFERENCES groups(id), token_hash TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK(role IN ('owner','member')), expires_at INTEGER NOT NULL, consumed_device_id TEXT REFERENCES devices(id), consumed_at INTEGER, revoked_at INTEGER);
+CREATE INDEX invitations_expiry ON invitations(expires_at);
+ALTER TABLE sessions ADD COLUMN device_id TEXT REFERENCES devices(id);
+ALTER TABLE sessions ADD COLUMN group_id TEXT REFERENCES groups(id);
+ALTER TABLE sessions ADD COLUMN audience TEXT NOT NULL DEFAULT 'viewer' CHECK(audience IN ('viewer','group'));
+ALTER TABLE sessions ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 60;
+CREATE UNIQUE INDEX one_active_device_session ON sessions(device_id) WHERE ended=0 AND device_id IS NOT NULL;
+CREATE TRIGGER revoke_member_sessions AFTER UPDATE OF revoked_at ON memberships WHEN OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL BEGIN UPDATE sessions SET ended=1,lat=NULL,lon=NULL,accuracy_m=NULL,observed_at=NULL,received_at=NULL WHERE device_id=NEW.device_id; END;
+CREATE TRIGGER revoke_group AFTER UPDATE OF revoked_at ON groups WHEN OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL BEGIN UPDATE invitations SET revoked_at=NEW.revoked_at WHERE group_id=NEW.id AND revoked_at IS NULL; UPDATE memberships SET revoked_at=NEW.revoked_at WHERE group_id=NEW.id AND revoked_at IS NULL; END;
+CREATE TABLE session_claims (id TEXT PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(id));

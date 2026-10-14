@@ -103,3 +103,7 @@ Exercise a local API integration scenario with three independent device credenti
 Use available browser/local simulator tooling for a real rendered viewer smoke check where possible; report if only automated DOM tests were possible. Flutter widget tests must exercise actual state changes, not only text existence.
 
 Required manual follow-up before real-world reliance: three Android installations against an HTTPS deployment; join/name/photo/meeting and spouse browser flow; foreground GPS, app background/lockscreen, process kill, network loss/reconnect, secure-storage restore and stop retry. Physical-device lockscreen/network validation and public deployment are not available yet and must be explicitly listed as unverified, without blocking the authorized local implementation/build.
+
+## Requested device delivery
+
+After reviews, tests and APK build pass, install the debug APK on the connected Samsung SM-S901E (ADB serial `R5CW724F1TE`) using `adb -s R5CW724F1TE install -r`. Preserve existing app data; do not uninstall or clear data to work around signing conflicts. Launch and check for startup errors. Installation is explicitly authorized by the user. Public HTTPS deployment remains separate.
