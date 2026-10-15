@@ -379,3 +379,28 @@ test('trail null hides the trail label and draws nothing', async () => {
     assert.equal(v.element('trail').hidden, true);
     assert.equal(lines(v).length, 0);
 });
+test('speed shows rounded km/h when present and flags low accuracy', async () => {
+    const v = await viewer({ lat: 41, lon: 29, accuracyM: 8, speedMps: 13.4, speedAccuracyMps: 1 });
+    assert.equal(v.element('speed').hidden, false);
+    assert.equal(v.element('speed').textContent, 'Speed 48 km/h');
+    await v.update({ lat: 41, lon: 29, speedMps: 13.4, speedAccuracyMps: 6 });
+    assert.equal(v.element('speed').textContent, 'Speed 48 km/h (low accuracy)');
+    v.advance(90000);
+    assert.equal(v.element('speed').hidden, false);
+});
+test('speed hidden when speedMps is null or missing', async () => {
+    const v = await viewer({ lat: 41, lon: 29, accuracyM: 8, speedMps: null });
+    assert.equal(v.element('speed').hidden, true);
+    await v.update({ lat: 41, lon: 29 });
+    assert.equal(v.element('speed').hidden, true);
+    assert.equal(v.element('speed').textContent, '');
+});
+test('ended, expired, 410 and 401 hide and clear speed', async () => {
+    for (const [state, status] of [['ended', 200], ['live', 410], ['live', 401]] as const) {
+        const v = await viewer({ lat: 41, lon: 29, accuracyM: 8, speedMps: 10 });
+        assert.equal(v.element('speed').hidden, false);
+        await v.end(state, status);
+        assert.equal(v.element('speed').hidden, true);
+        assert.equal(v.element('speed').textContent, '');
+    }
+});

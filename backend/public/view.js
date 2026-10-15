@@ -207,6 +207,10 @@ function render() {
     el('connection').textContent = connection;
     el('coords').textContent = point ? `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}` : 'No shared position';
     el('accuracy').textContent = point ? `Accuracy ±${Math.round(point.accuracyM)} m` : 'Accuracy —';
+    // Speed stays next to Age while a point ages; poor GPS speed accuracy (over 5 m/s) is flagged, not hidden.
+    const speed = point && Number.isFinite(point.speedMps) ? `Speed ${Math.round(point.speedMps * 3.6)} km/h${point.speedAccuracyMps > 5 ? ' (low accuracy)' : ''}` : '';
+    el('speed').hidden = !speed;
+    el('speed').textContent = speed;
     el('captured').textContent = point ? `Captured ${new Date(point.observedAt).toLocaleTimeString()}` : 'Captured —';
     el('age').textContent = point ? `Age ${Math.max(0, Math.floor((now - point.observedAt) / 1000))} seconds` : 'Age —';
     el('message').textContent = ({

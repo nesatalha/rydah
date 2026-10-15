@@ -26,6 +26,8 @@ export interface Session {
     lat: number | null;
     lon: number | null;
     accuracy_m: number | null;
+    speed_mps: number | null;
+    speed_accuracy_mps: number | null;
     observed_at: number | null;
     received_at: number | null;
     device_id: string | null;
@@ -98,6 +100,8 @@ export function text(value: unknown, max: number): string {
     }
     return value.trim();
 }
+// GPS speed and its accuracy in m/s; absent or null means unknown.
+export const validSpeed = (v: unknown) => v === undefined || v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100);
 export const coordinates = (body: any) => body && typeof body.lat === 'number' && Number.isFinite(body.lat) && Math.abs(body.lat) <= 90 && typeof body.lon === 'number' && Number.isFinite(body.lon) && Math.abs(body.lon) <= 180;
 export async function bytes(request: Request, limit: number): Promise<Uint8Array> {
     const declared = request.headers.get('Content-Length');
@@ -189,7 +193,7 @@ export function sharing(s: Session, now = Date.now()) {
     const state = s.ended ? 'ended' : age === null ? 'waiting' : age <= 20000 ? 'live' : age <= 60000 ? 'stale' : 'offline';
     return {
         state, expiresAt: s.expires_at, location: s.ended || s.lat === null ? null : {
-            lat: s.lat, lon: s.lon, accuracyM: s.accuracy_m, observedAt: s.observed_at, receivedAt: s.received_at
+            lat: s.lat, lon: s.lon, accuracyM: s.accuracy_m, speedMps: s.speed_mps ?? null, speedAccuracyMps: s.speed_accuracy_mps ?? null, observedAt: s.observed_at, receivedAt: s.received_at
         }
     };
 }
