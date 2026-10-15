@@ -11,16 +11,17 @@
 
 For nontrivial or cross-cutting work, use these roles in order:
 
-| Role | Model | Reasoning | Responsibility |
-| --- | --- | --- | --- |
-| Planner | `gpt-6-astra` | high | Inspect the affected mobile, Worker, storage, and release boundaries; produce a focused plan with validation steps before implementation. |
-| Implementer | `gpt-6.1-sol` | high | Implement the agreed plan and run the relevant checks. |
-| Reviewer | `gpt-6.1-sol` | medium | Review the finished diff, test evidence, correctness, and release risks. |
+| Role | Codex model | Claude Code | Reasoning | Responsibility |
+| --- | --- | --- | --- | --- |
+| Planner | `gpt-6-astra` | `Plan` subagent, Opus | high | Inspect the affected mobile, Worker, storage, and release boundaries; produce a focused plan with validation steps before implementation. |
+| Implementer | `gpt-6.1-sol` | Primary thread | high | Implement the agreed plan and run the relevant checks. |
+| Reviewer | `gpt-6.1-sol` | Fresh subagent, Sonnet | medium | Review the finished diff, test evidence, correctness, and release risks. |
 
 - Use a planning subagent first and an implementation agent second for nontrivial or cross-cutting work.
 - After implementation, use a reviewer for changes involving sharing, GPS, Cloudflare Workers, storage, or releases. Address actionable findings and rerun affected checks before opening the PR.
 - Keep small, isolated fixes in the primary thread to save tokens. Delegate only when the scope or required review benefits from it.
 - When spawning agents with explicit model assignments, use `fork_turns="none"` and provide the task, plan, paths, and necessary context explicitly.
+- In Claude Code, implement in the primary thread: it already holds the plan and context, so a cold implementation agent would only re-read them. Give the planner and reviewer a self-contained brief (task, approved decisions, paths, plan or diff range) rather than the whole conversation.
 
 ## Validation
 
