@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'share_options_dialog.dart';
 import 'local_store.dart';
 import 'gps_source.dart';
 import 'ride_recorder.dart';
@@ -166,71 +167,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       return;
     }
     final inGroup = account.account?.enrolled == true;
-    var audience = 'viewer';
-    var minutes = 60;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          title: const Text('Start location sharing'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: audience,
-                decoration: const InputDecoration(labelText: 'Audience'),
-                items: [
-                  const DropdownMenuItem(
-                    value: 'viewer',
-                    child: Text('Private link'),
-                  ),
-                  if (inGroup)
-                    const DropdownMenuItem(
-                      value: 'group',
-                      child: Text('Group + private link'),
-                    ),
-                ],
-                onChanged: (v) => update(() => audience = v!),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                initialValue: minutes,
-                decoration: const InputDecoration(labelText: 'Duration'),
-                items: const [
-                  DropdownMenuItem(value: 30, child: Text('30 minutes')),
-                  DropdownMenuItem(value: 60, child: Text('1 hour')),
-                  DropdownMenuItem(value: 120, child: Text('2 hours')),
-                  DropdownMenuItem(value: 240, child: Text('4 hours')),
-                ],
-                onChanged: (v) => update(() => minutes = v!),
-              ),
-              const Text(
-                'This explicitly starts GPS updates for the chosen audience. Recording remains independent.',
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Start sharing'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (go != true || !mounted) return;
+    final options = await showShareOptions(context, inGroup: inGroup);
+    if (options == null || !mounted) return;
     try {
       await account.ensureRegistered();
     } catch (e) {
       if (mounted) await showError(context, e);
       return;
     }
-    sender.audience = audience;
-    sender.durationMinutes = minutes;
+    sender.audience = options.audience;
+    sender.durationMinutes = options.minutes;
+    sender.trail = options.trail;
     await sender.start();
   }
 

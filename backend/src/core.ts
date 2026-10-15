@@ -26,12 +26,57 @@ export interface Session {
     lat: number | null;
     lon: number | null;
     accuracy_m: number | null;
+    speed_mps: number | null;
+    speed_accuracy_mps: number | null;
     observed_at: number | null;
     received_at: number | null;
     device_id: string | null;
     group_id: string | null;
     audience: 'viewer' | 'group';
     duration_minutes: number;
+    trail: Trail;
+}
+export type Trail = 'off' | '15m' | '30m' | 'session';
+export const TRAILS: Trail[] = ['off', '15m', '30m', 'session'];
+export const TRAIL_MIN_INTERVAL_MS = 10000;
+const TRAIL_WINDOW_MS: Record<Trail, number | null> = { off: null, '15m': 900000, '30m': 1800000, session: null };
+// Points older than the window are hidden on read even before an upload prunes them. Expects `?` bound to now.
+export const trailWindowSQL = (s: string, p: string) => `(${s}.trail='session' OR ${p}.observed_at >= ? - CASE ${s}.trail WHEN '15m' THEN 900000 ELSE 1800000 END)`;
+export type TrailPoint = [number, number, number, number];
+export function trailOutput(setting: Trail, ended: number, points: TrailPoint[], reset: boolean, now: number) {
+    if (setting === 'off' || ended) {
+        return null;
+    }
+    const window = TRAIL_WINDOW_MS[setting];
+    return { setting, windowStartsAt: window === null ? null : now - window, reset, points };
+}
+export const cursor = (value: string | null) => {
+    if (value === null || value === '') {
+        return 0;
+    }
+    if (!/^\d{1,15}$/.test(value)) {
+        fail('Invalid trail cursor', 400);
+    }
+    return Number(value);
+};
+// trailSince=<deviceId>:<expiresAt>:<seq>,... -> {deviceId: [expiresAt, seq]}; keys are client input, so no prototype.
+export function trailCursors(value: string): Record<string, [number, number]> {
+    const result: Record<string, [number, number]> = Object.create(null);
+    if (value === '') {
+        return result;
+    }
+    const entries = value.split(',');
+    if (entries.length > 32) {
+        fail('Too many trail cursors', 400);
+    }
+    for (const entry of entries) {
+        const m = entry.match(/^([A-Za-z0-9_-]{1,128}):(\d{1,15}):(\d{1,15})$/);
+        if (!m) {
+            fail('Invalid trail cursor', 400);
+        }
+        result[m[1]] = [Number(m[2]), Number(m[3])];
+    }
+    return result;
 }
 export class HttpError extends Error {
     constructor(message: string, public status: number) {
@@ -55,6 +100,8 @@ export function text(value: unknown, max: number): string {
     }
     return value.trim();
 }
+// GPS speed and its accuracy in m/s; absent or null means unknown.
+export const validSpeed = (v: unknown) => v === undefined || v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100);
 export const coordinates = (body: any) => body && typeof body.lat === 'number' && Number.isFinite(body.lat) && Math.abs(body.lat) <= 90 && typeof body.lon === 'number' && Number.isFinite(body.lon) && Math.abs(body.lon) <= 180;
 export async function bytes(request: Request, limit: number): Promise<Uint8Array> {
     const declared = request.headers.get('Content-Length');
@@ -146,7 +193,7 @@ export function sharing(s: Session, now = Date.now()) {
     const state = s.ended ? 'ended' : age === null ? 'waiting' : age <= 20000 ? 'live' : age <= 60000 ? 'stale' : 'offline';
     return {
         state, expiresAt: s.expires_at, location: s.ended || s.lat === null ? null : {
-            lat: s.lat, lon: s.lon, accuracyM: s.accuracy_m, observedAt: s.observed_at, receivedAt: s.received_at
+            lat: s.lat, lon: s.lon, accuracyM: s.accuracy_m, speedMps: s.speed_mps ?? null, speedAccuracyMps: s.speed_accuracy_mps ?? null, observedAt: s.observed_at, receivedAt: s.received_at
         }
     };
 }

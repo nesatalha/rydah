@@ -1,5 +1,7 @@
 # Private Riding Group Implementation Plan
 
+> **Status:** Implemented in PR #3. File names differ from this plan (for example `account_store.dart` and `account_controller.dart` instead of `profile_store.dart` and `identity_store.dart`), and `flutter_secure_storage` is `^11.2.0`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Let a small group of friends join by invitation, recognize one another by name/photo, optionally share their location for a chosen duration, and agree on a meeting point, while a spouse's private browser link reveals only its sender.

@@ -4,6 +4,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'group_controller.dart';
 import 'person_avatar.dart';
+import 'trail.dart';
+import 'meeting_eta.dart' show etaLabel;
 import 'ui_helpers.dart';
 
 class GroupScreen extends StatefulWidget {
@@ -122,6 +124,29 @@ class _GroupScreenState extends State<GroupScreen> {
     });
   }
 
+  /// ETA label for a member, or null without a meeting point or location.
+  String? _eta(Map<String, dynamic> m) {
+    final eta = c.memberEta(m);
+    return eta == null ? null : etaLabel(eta);
+  }
+
+  List<TrailSegment> _trail(Map<String, dynamic> m) {
+    final points = c.visibleTrail(m);
+    if (points.isEmpty) return const [];
+    final l = c.visibleLocation(m)!;
+    return fadeSegments(
+      points,
+      setting: c.trails[m['deviceId']]!.setting,
+      now: c.now().millisecondsSinceEpoch,
+      current: TrailPoint(
+        0,
+        (l['lat'] as num).toDouble(),
+        (l['lon'] as num).toDouble(),
+        (l['observedAt'] as num).toInt(),
+      ),
+    );
+  }
+
   void fit() {
     final points = <LatLng>[];
     for (final m in c.members) {
@@ -190,6 +215,14 @@ class _GroupScreenState extends State<GroupScreen> {
           const Text(
             'Join an invitation in Settings. Joining never enables location sharing.',
           ),
+        if (c.etaSummary case final summary?)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              summary,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
         SizedBox(
           height: 300,
           child: ClipRRect(
@@ -210,6 +243,21 @@ class _GroupScreenState extends State<GroupScreen> {
                         'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'app.rydah.mobile',
                   ),
+                PolylineLayer(
+                  polylines: [
+                    for (final m in c.members)
+                      for (final s in _trail(m))
+                        Polyline(
+                          points: s.points,
+                          strokeWidth: 4,
+                          color:
+                              (c.error == null
+                                      ? const Color(0xff0f766e)
+                                      : Colors.orange)
+                                  .withValues(alpha: s.opacity),
+                        ),
+                  ],
+                ),
                 MarkerLayer(
                   markers: [
                     for (final m in c.members)
@@ -222,8 +270,9 @@ class _GroupScreenState extends State<GroupScreen> {
                           width: 54,
                           height: 54,
                           child: Tooltip(
-                            message:
-                                '${m['name']}${c.error == null ? '' : ' — last known, offline'}',
+                            message: _eta(m) != null
+                                ? '${m['name']} • ${_eta(m)}'
+                                : '${m['name']}${c.error == null ? '' : ' — last known, offline'}',
                             child: Container(
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
@@ -321,11 +370,7 @@ class _GroupScreenState extends State<GroupScreen> {
             ),
             title: Text(m['name']),
             subtitle: Text(
-              '${m['deviceId'] == c.api.account.deviceId ? (snapshot?['role']) : 'friend'} • ${c.visibleLocation(m) == null
-                  ? 'Not sharing / location unavailable'
-                  : c.error == null
-                  ? 'Sharing'
-                  : 'Last known — offline'}',
+              '${m['deviceId'] == c.api.account.deviceId ? (snapshot?['role']) : 'friend'} • ${c.visibleLocation(m) == null ? 'Not sharing / location unavailable' : _eta(m) ?? (c.error == null ? 'Sharing' : 'Last known — offline')}',
             ),
             trailing: owner && m['deviceId'] != c.api.account.deviceId
                 ? IconButton(

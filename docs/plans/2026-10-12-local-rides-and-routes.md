@@ -1,5 +1,7 @@
 # Local Rides and Routes Implementation Plan
 
+> **Status:** Implemented in the initial commit (f8fafb1).
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Deliver an integrated Android app that records and revisits motorcycle rides locally, creates reusable routes, and retains the existing private location-sharing flow.

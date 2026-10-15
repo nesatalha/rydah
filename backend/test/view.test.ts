@@ -40,6 +40,7 @@ async function viewer(initialLocation: any = {
     });
     const maps: any[] = [];
     const markers: any[] = [];
+    const layers: any[] = [];
     const context = createContext({
         URLSearchParams, URL: { createObjectURL() {
                 const url = `blob:photo-${blobs.length}`;
@@ -108,6 +109,22 @@ async function viewer(initialLocation: any = {
                 markers.push(marker);
                 return marker;
             },
+            layerGroup() {
+                const layer = {
+                    lines: [] as any[], addTo() {
+                        return this;
+                    }, clearLayers() {
+                        this.lines = [];
+                    }, addLayer(line: any) {
+                        this.lines.push(line);
+                    }
+                };
+                layers.push(layer);
+                return layer;
+            },
+            polyline(points: number[][], options: any) {
+                return { points: points.map(p => Array.from(p)), options };
+            },
             circleMarker(position: number[]) {
                 const marker = {
                     position: Array.from(position),
@@ -127,7 +144,13 @@ async function viewer(initialLocation: any = {
     runInContext(source, context);
     await new Promise(resolve => setImmediate(resolve));
     return {
-        element, maps, markers, requests, revoked, blobs,
+        element, maps, markers, requests, revoked, blobs, layers,
+        now: () => now,
+        async trail(trail: any) {
+            response.trail = trail;
+            await runInContext('poll()', context);
+        },
+        sessionRequests: () => requests.filter(r => !r.url.endsWith('/avatar')).map(r => r.url),
         photoStatus(status: number) {
             photoStatus = status;
         },
@@ -276,4 +299,108 @@ test('an undecodable photo revokes its blob and restores initials', async () => 
     v.markers[0].icon.html.children[0].listeners.get('error')();
     assert.deepEqual(v.revoked, ['blob:photo-0']);
     assert.equal(v.markers[0].icon.html.textContent, 'AR');
+});
+
+const trail = (points: any[], reset = true, setting = 'session', windowStartsAt: number | null = null) => ({ setting, windowStartsAt, reset, points });
+const lines = (v: any) => v.layers.at(-1)?.lines ?? [];
+test('first poll fetches full trail, later polls send since=<maxSeq>', async () => {
+    const v = await viewer();
+    const t = v.now();
+    await v.trail(trail([[3, 41, 29, t - 20000], [4, 41.001, 29, t - 10000]]));
+    await v.trail(trail([], false));
+    const urls = v.sessionRequests();
+    assert.equal(urls[0], '/api/sessions/test');
+    assert.equal(urls.at(-1), '/api/sessions/test?since=4');
+});
+test('trail renders age-faded segments ending at the current marker', async () => {
+    const v = await viewer();
+    const t = v.now();
+    await v.trail(trail([[1, 40.9, 29, t - 40000], [2, 40.95, 29, t - 30000], [3, 40.98, 29, t - 20000]]));
+    const drawn = lines(v);
+    assert.ok(drawn.length >= 1);
+    assert.deepEqual(drawn.at(-1).points.at(-1), [41, 29]);
+    const opacities = drawn.map((l: any) => l.options.opacity);
+    assert.deepEqual([...opacities].sort((a, b) => a - b), opacities);
+    assert.ok(opacities.at(-1) > opacities[0] || drawn.length === 1);
+    assert.equal(v.element('trail').hidden, false);
+    assert.match(v.element('trail').textContent, /whole session/i);
+});
+test('gap over 60 s splits the polyline', async () => {
+    const v = await viewer();
+    const t = v.now();
+    await v.trail(trail([[1, 40.5, 29, t - 200000], [2, 40.6, 29, t - 190000], [3, 40.9, 29, t - 20000]]));
+    const drawn = lines(v);
+    const joined = drawn.some((l: any) => l.points.some((p: number[]) => p[0] === 40.6) && l.points.some((p: number[]) => p[0] === 40.9));
+    assert.equal(joined, false);
+});
+test('reset replaces cache; windowStartsAt drops old points', async () => {
+    const v = await viewer();
+    const t = v.now();
+    await v.trail(trail([[1, 40.1, 29, t - 50000], [2, 40.2, 29, t - 40000]], true, '15m', t - 900000));
+    await v.trail(trail([[3, 40.3, 29, t - 30000]], false, '15m', t - 45000));
+    const kept = lines(v).flatMap((l: any) => l.points.map((p: number[]) => p[0]));
+    assert.ok(!kept.includes(40.1));
+    assert.ok(kept.includes(40.2) && kept.includes(40.3));
+    await v.trail(trail([[9, 40.9, 29, t - 15000]], true, '15m', t - 900000));
+    const replaced = lines(v).flatMap((l: any) => l.points.map((p: number[]) => p[0]));
+    assert.ok(!replaced.includes(40.2) && replaced.includes(40.9));
+});
+test('trail updates never change the viewport after user pan; recenter unchanged', async () => {
+    const v = await viewer();
+    const t = v.now();
+    v.maps[0].setView([40, 28], 12);
+    await v.trail(trail([[1, 40.9, 29, t - 20000]]));
+    v.advance(6000);
+    await v.trail(trail([[2, 40.95, 29, t - 5000]], false));
+    assert.deepEqual(v.maps[0].center, [40, 28]);
+    assert.equal(v.maps[0].zoom, 12);
+    v.recenter();
+    assert.deepEqual(v.maps[0].center, [41, 29]);
+    assert.equal(v.maps[0].zoom, 16);
+});
+test('ended, expired, 410 and 401 clear the trail cache and layers', async () => {
+    for (const [state, status] of [['ended', 200], ['live', 410], ['live', 401]] as const) {
+        const v = await viewer();
+        await v.trail(trail([[1, 40.9, 29, v.now() - 20000]]));
+        assert.ok(lines(v).length > 0);
+        await v.end(state, status);
+        assert.equal(v.maps[0].removed, true);
+        assert.equal(v.element('trail').hidden, true);
+    }
+    const v = await viewer();
+    await v.trail(trail([[1, 40.9, 29, v.now() - 20000]]));
+    v.advance(3600001);
+    assert.equal(v.element('trail').hidden, true);
+    assert.equal(v.maps[0].removed, true);
+});
+test('trail null hides the trail label and draws nothing', async () => {
+    const v = await viewer();
+    await v.trail(null);
+    assert.equal(v.element('trail').hidden, true);
+    assert.equal(lines(v).length, 0);
+});
+test('speed shows rounded km/h when present and flags low accuracy', async () => {
+    const v = await viewer({ lat: 41, lon: 29, accuracyM: 8, speedMps: 13.4, speedAccuracyMps: 1 });
+    assert.equal(v.element('speed').hidden, false);
+    assert.equal(v.element('speed').textContent, 'Speed 48 km/h');
+    await v.update({ lat: 41, lon: 29, speedMps: 13.4, speedAccuracyMps: 6 });
+    assert.equal(v.element('speed').textContent, 'Speed 48 km/h (low accuracy)');
+    v.advance(90000);
+    assert.equal(v.element('speed').hidden, false);
+});
+test('speed hidden when speedMps is null or missing', async () => {
+    const v = await viewer({ lat: 41, lon: 29, accuracyM: 8, speedMps: null });
+    assert.equal(v.element('speed').hidden, true);
+    await v.update({ lat: 41, lon: 29 });
+    assert.equal(v.element('speed').hidden, true);
+    assert.equal(v.element('speed').textContent, '');
+});
+test('ended, expired, 410 and 401 hide and clear speed', async () => {
+    for (const [state, status] of [['ended', 200], ['live', 410], ['live', 401]] as const) {
+        const v = await viewer({ lat: 41, lon: 29, accuracyM: 8, speedMps: 10 });
+        assert.equal(v.element('speed').hidden, false);
+        await v.end(state, status);
+        assert.equal(v.element('speed').hidden, true);
+        assert.equal(v.element('speed').textContent, '');
+    }
 });

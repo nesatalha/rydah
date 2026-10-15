@@ -1,5 +1,7 @@
 # Configurable location-sharing duration — design
 
+> **Status:** Superseded. Merged in PR #2, then replaced in e35c5cc by the deployed device-owned sessions with 30/60/120/240-minute durations.
+
 ## Goal
 
 Let a rider choose how long a private live-location link remains active when

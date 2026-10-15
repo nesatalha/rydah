@@ -125,4 +125,215 @@ void main() {
       );
     },
   );
+  test(
+    'group refresh sends trailSince cursors and merges incremental trails',
+    () async {
+      final now = DateTime.fromMillisecondsSinceEpoch(1000000);
+      final a = DeviceAccount(
+        'https://friends.example',
+        'me',
+        'secret',
+        enrolled: true,
+      );
+      final queries = <String?>[];
+      var call = 0;
+      Map<String, dynamic> member(
+        Map<String, dynamic>? trail, {
+        bool sharing = true,
+      }) => {
+        'deviceId': 'peer',
+        'name': 'Ada',
+        'avatarVersion': null,
+        'sharing': sharing
+            ? {
+                'state': 'live',
+                'expiresAt': 1100000,
+                'location': {
+                  'lat': 41.3,
+                  'lon': 29,
+                  'observedAt': 995000,
+                  'receivedAt': 995000,
+                  'accuracyM': 5,
+                },
+                'trail': trail,
+              }
+            : null,
+      };
+      final responses = [
+        member({
+          'setting': 'session',
+          'windowStartsAt': null,
+          'reset': true,
+          'points': [
+            [1, 41.1, 29, 980000],
+            [2, 41.2, 29, 990000],
+          ],
+        }),
+        member({
+          'setting': 'session',
+          'windowStartsAt': null,
+          'reset': false,
+          'points': [
+            [3, 41.25, 29, 994000],
+          ],
+        }),
+        member(null, sharing: false),
+      ];
+      await http.runWithClient(
+        () async {
+          final c = GroupController(GroupApi(a), now: () => now);
+          await c.refresh();
+          expect(queries.last, '');
+          expect(c.trails['peer']!.points.map((p) => p.seq), [1, 2]);
+          await c.refresh();
+          expect(queries.last, 'peer:1100000:2');
+          expect(c.trails['peer']!.points.map((p) => p.seq), [1, 2, 3]);
+          expect(c.visibleTrail(c.members.first), hasLength(3));
+          await c.refresh();
+          expect(c.trails, isEmpty);
+          c.dispose();
+        },
+        () => MockClient((r) async {
+          queries.add(r.url.queryParameters['trailSince']);
+          return http.Response(
+            jsonEncode({
+              'id': 'group',
+              'name': 'Friends',
+              'role': 'member',
+              'members': [responses[call++]],
+            }),
+            200,
+          );
+        }),
+      );
+    },
+  );
+  test('member who loses membership drops trail', () async {
+    final a = DeviceAccount(
+      'https://friends.example',
+      'me',
+      'secret',
+      enrolled: true,
+    );
+    var mode = 0;
+    await http.runWithClient(
+      () async {
+        final c = GroupController(
+          GroupApi(a),
+          now: () => DateTime.fromMillisecondsSinceEpoch(1000000),
+        );
+        await c.refresh();
+        expect(c.trails, isNotEmpty);
+        mode = 1;
+        await c.refresh();
+        expect(c.trails, isEmpty);
+        c.dispose();
+      },
+      () => MockClient((r) async {
+        if (mode == 1) return http.Response('{"error":"Forbidden"}', 403);
+        return http.Response(
+          jsonEncode({
+            'id': 'group',
+            'name': 'Friends',
+            'role': 'member',
+            'members': [
+              {
+                'deviceId': 'peer',
+                'name': 'Ada',
+                'avatarVersion': null,
+                'sharing': {
+                  'state': 'live',
+                  'expiresAt': 1100000,
+                  'location': {
+                    'lat': 41,
+                    'lon': 29,
+                    'observedAt': 995000,
+                    'receivedAt': 995000,
+                    'accuracyM': 5,
+                  },
+                  'trail': {
+                    'setting': '15m',
+                    'windowStartsAt': 100000,
+                    'reset': true,
+                    'points': [
+                      [1, 40.9, 29, 990000],
+                    ],
+                  },
+                },
+              },
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+  });
+  test(
+    'group refresh smooths member speed across polls, computes ETA to the meeting point and drops speed when member stops sharing',
+    () async {
+      var now = DateTime.fromMillisecondsSinceEpoch(1000000);
+      final a = DeviceAccount(
+        'https://friends.example',
+        'me',
+        'secret',
+        enrolled: true,
+      );
+      final speeds = <double?>[13.89, 13.89, 0, null];
+      var call = 0;
+      await http.runWithClient(
+        () async {
+          final c = GroupController(GroupApi(a), now: () => now);
+          for (var i = 0; i < 3; i++) {
+            await c.refresh();
+            now = now.add(const Duration(seconds: 5));
+          }
+          final eta = c.memberEta(c.members.first)!;
+          expect(eta.kind.name, 'moving');
+          expect(c.etaSummary, '0 of 1 arrived • next: Ada ~12 min');
+          await c.refresh();
+          expect(c.memberEta(c.members.first)!.kind.name, 'distanceOnly');
+          c.dispose();
+        },
+        () => MockClient((r) async {
+          final i = call++;
+          final at = 1000000 + i * 5000;
+          return http.Response(
+            jsonEncode({
+              'id': 'group',
+              'name': 'Friends',
+              'role': 'member',
+              'meetingPoint': {
+                'lat': 41.0,
+                'lon': 29.0,
+                'label': 'Cafe',
+                'updatedAt': 1,
+                'updatedBy': 'me',
+              },
+              'members': [
+                {
+                  'deviceId': 'peer',
+                  'name': 'Ada',
+                  'avatarVersion': null,
+                  'sharing': {
+                    'state': 'live',
+                    'expiresAt': 2000000,
+                    'location': {
+                      'lat': 41.0 + 8000 / 111195,
+                      'lon': 29.0,
+                      'accuracyM': 5,
+                      'speedMps': speeds[i],
+                      'speedAccuracyMps': speeds[i] == null ? null : 1,
+                      'observedAt': at,
+                      'receivedAt': at,
+                    },
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+    },
+  );
 }

@@ -10,10 +10,12 @@ class DurableApi extends GroupApi {
   DurableApi(super.account, this.store);
   final AccountStore store;
   int creates = 0, stops = 0, uploads = 0;
+  final inputs = <Map<String, dynamic>>[];
   bool lose = true, failStop = false;
   @override
   Future<ShareSession> createSession(Map<String, dynamic> input) async {
     creates++;
+    inputs.add(input);
     final saved = await store.load(account.origin);
     expect(saved.pending!['id'], input['id']);
     if (lose) throw Exception('lost response');
@@ -102,6 +104,47 @@ void main() {
     api.failStop = false;
     await sender.stop();
     expect(a.pending, isNull);
+    sender.dispose();
+  });
+  test('pending record persists trail and createSession sends it', () async {
+    final store = AccountStore(MemorySecrets());
+    final a = await store.load('https://friends.example');
+    final api = DurableApi(a, store)..lose = false;
+    final sender = LocationSender(
+      api: api,
+      accountStore: store,
+      prepare: () async {},
+      points: () => const Stream.empty(),
+    )..trail = 'session';
+    await sender.start();
+    expect(api.inputs.single['trail'], 'session');
+    expect((await store.load(a.origin)).pending!['trail'], 'session');
+    await sender.stop();
+    sender.dispose();
+  });
+  test('legacy pending without trail recovers without sending trail', () async {
+    final store = AccountStore(MemorySecrets());
+    final a = await store.load('https://friends.example');
+    a.pending = {
+      'id': 'legacy',
+      'readToken': 'r' * 64,
+      'writeToken': 'w' * 64,
+      'audience': 'viewer',
+      'durationMinutes': 60,
+      'backend': a.origin,
+      'stop': false,
+    };
+    await store.save(a);
+    final api = DurableApi(a, store)..lose = false;
+    final sender = LocationSender(
+      api: api,
+      accountStore: store,
+      prepare: () async {},
+      points: () => const Stream.empty(),
+    );
+    await sender.recover();
+    expect(api.inputs.single.containsKey('trail'), isFalse);
+    expect(api.stops, 1);
     sender.dispose();
   });
 }
