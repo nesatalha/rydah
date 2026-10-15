@@ -4,7 +4,7 @@ Examples use the local backend at `http://localhost:8787` and the local creator 
 
 ## Migrations
 
-Apply all local migrations with `npx wrangler d1 migrations apply rydah --local`. Migration `0001_sessions.sql` remains unchanged; `0002_private_groups.sql` adds devices, profiles, private groups, invitations and sharing audiences; `0003_session_trails.sql` adds the optional trail setting and trail points.
+Apply all local migrations with `npx wrangler d1 migrations apply rydah --local`. Migration `0001_sessions.sql` remains unchanged; `0002_private_groups.sql` adds devices, profiles, private groups, invitations and sharing audiences; `0003_session_trails.sql` adds the optional trail setting and trail points; `0004_session_speed.sql` adds GPS speed and its accuracy on the current point.
 
 ## Bootstrap a private group
 
@@ -43,6 +43,14 @@ A device that only shares private links registers itself without an invitation: 
 Use the device token for `/api/me`, `/api/group`, and `POST /api/me/sessions`. Session creation accepts locally persisted `{id,readToken,writeToken,audience,durationMinutes}`; `audience` is `viewer` or `group`, and durations are 30, 60, 120 or 240 minutes (default 60). Only one session per device is active. Exact retries preserve its original expiry; a stopped, expired or conflicting session ID cannot start a new share. Viewer shares appear only through their private read link; group shares also appear in the member roster. A device can start a viewer share after leaving a group. Removal, leaving, or group deletion immediately ends all sessions that existed for the affected device.
 
 The legacy creator-key route `POST /api/sessions` (used by the simulator) still creates one-hour sessions without a trail.
+
+## Speed
+
+`PUT /api/sessions/:id/location` accepts optional `speedMps` and `speedAccuracyMps` (GPS speed and its accuracy, m/s, each finite and 0–100; absent or `null` means unknown, anything else returns 400). They are stored with the current point only; an upload without them stores `null`. Both reads (`GET /api/sessions/:id` and `GET /api/group`) include them in `location`:
+
+```json
+{ "lat": 41.0, "lon": 29.0, "accuracyM": 8, "speedMps": 13.4, "speedAccuracyMps": 1.2, "observedAt": 1760000000000, "receivedAt": 1760000000500 }
+```
 
 ## Trails
 

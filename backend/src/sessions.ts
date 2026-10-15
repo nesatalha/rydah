@@ -1,4 +1,4 @@
-import { activeGroupSQL, bearer, body, coordinates, creator, cursor, device, empty, Env, fail, hash, json, photo, Device, membership, requireMember, secret, Session, sharing, TRAIL_MIN_INTERVAL_MS, trailOutput, TrailPoint, TRAILS, trailWindowSQL, validId, validToken } from './core.js';
+import { activeGroupSQL, bearer, body, coordinates, creator, cursor, device, empty, Env, fail, hash, json, photo, Device, membership, requireMember, secret, Session, sharing, TRAIL_MIN_INTERVAL_MS, trailOutput, TrailPoint, TRAILS, trailWindowSQL, validId, validSpeed, validToken } from './core.js';
 export async function sessions(request: Request, env: Env, path: string): Promise<Response | null> {
     const now = Date.now();
     if (path === '/api/sessions' && request.method === 'POST') {
@@ -46,7 +46,7 @@ export async function sessions(request: Request, env: Env, path: string): Promis
         const m = input.audience === 'group' ? await requireMember(env, d.id) : await membership(env, d.id), expiresAt = now + duration * 60000;
         try {
             const results = await env.DB.batch([
-                env.DB.prepare('UPDATE sessions SET ended=1,lat=NULL,lon=NULL,accuracy_m=NULL,observed_at=NULL,received_at=NULL WHERE device_id=? AND ended=0 AND expires_at<=?').bind(d.id, now),
+                env.DB.prepare('UPDATE sessions SET ended=1,lat=NULL,lon=NULL,accuracy_m=NULL,speed_mps=NULL,speed_accuracy_mps=NULL,observed_at=NULL,received_at=NULL WHERE device_id=? AND ended=0 AND expires_at<=?').bind(d.id, now),
                 env.DB.prepare(`INSERT INTO sessions(id,write_hash,read_hash,source,expires_at,device_id,group_id,audience,duration_minutes,trail) SELECT ?,?,?,'device',?,?,?,?,?,?
             WHERE NOT EXISTS(SELECT 1 
             FROM session_claims 
@@ -134,7 +134,7 @@ export async function sessions(request: Request, env: Env, path: string): Promis
         return photo(avatar);
     }
     if (request.method === 'DELETE' && !match[3]) {
-        await env.DB.prepare('UPDATE sessions SET ended=1,lat=NULL,lon=NULL,accuracy_m=NULL,observed_at=NULL,received_at=NULL WHERE id=?').bind(row.id).run();
+        await env.DB.prepare('UPDATE sessions SET ended=1,lat=NULL,lon=NULL,accuracy_m=NULL,speed_mps=NULL,speed_accuracy_mps=NULL,observed_at=NULL,received_at=NULL WHERE id=?').bind(row.id).run();
         return empty();
     }
     if (request.method === 'PUT' && match[3] === 'location') {
@@ -142,12 +142,12 @@ export async function sessions(request: Request, env: Env, path: string): Promis
             fail('Sharing ended', 410);
         }
         const p = await body(request);
-        if (!coordinates(p) || !Number.isSafeInteger(p.seq) || p.seq <= 0 || !Number.isFinite(p.accuracyM) || p.accuracyM < 0 || p.accuracyM > 100000 || !Number.isSafeInteger(p.observedAt) || p.observedAt < now - 120000 || p.observedAt > now + 30000) {
+        if (!coordinates(p) || !Number.isSafeInteger(p.seq) || p.seq <= 0 || !Number.isFinite(p.accuracyM) || p.accuracyM < 0 || p.accuracyM > 100000 || !Number.isSafeInteger(p.observedAt) || p.observedAt < now - 120000 || p.observedAt > now + 30000 || !validSpeed(p.speedMps) || !validSpeed(p.speedAccuracyMps)) {
             fail('Invalid location', 400);
         }
         // One transaction: the trail insert only matches when this exact update applied, and pruning keeps the chosen window.
         const [updated] = await env.DB.batch([
-            env.DB.prepare(`UPDATE sessions SET seq=?,lat=?,lon=?,accuracy_m=?,observed_at=?,received_at=? WHERE id=? AND ended=0 AND expires_at>? AND seq<? AND (observed_at IS NULL OR observed_at<=?) AND (audience='viewer' OR ${activeGroupSQL})`).bind(p.seq, p.lat, p.lon, p.accuracyM, p.observedAt, now, row.id, now, p.seq, p.observedAt),
+            env.DB.prepare(`UPDATE sessions SET seq=?,lat=?,lon=?,accuracy_m=?,speed_mps=?,speed_accuracy_mps=?,observed_at=?,received_at=? WHERE id=? AND ended=0 AND expires_at>? AND seq<? AND (observed_at IS NULL OR observed_at<=?) AND (audience='viewer' OR ${activeGroupSQL})`).bind(p.seq, p.lat, p.lon, p.accuracyM, p.speedMps ?? null, p.speedAccuracyMps ?? null, p.observedAt, now, row.id, now, p.seq, p.observedAt),
             env.DB.prepare(`INSERT OR IGNORE INTO session_points(session_id,seq,lat,lon,observed_at) SELECT id,seq,lat,lon,observed_at FROM sessions WHERE id=? AND seq=? AND received_at=? AND ended=0 AND trail<>'off' AND NOT EXISTS(SELECT 1 FROM session_points WHERE session_id=? AND observed_at>?)`).bind(row.id, p.seq, now, row.id, p.observedAt - TRAIL_MIN_INTERVAL_MS),
             env.DB.prepare(`DELETE FROM session_points WHERE session_id=? AND observed_at < ? - (SELECT CASE trail WHEN '15m' THEN 900000 WHEN '30m' THEN 1800000 END FROM sessions WHERE id=?)`).bind(row.id, now, row.id),
         ]);

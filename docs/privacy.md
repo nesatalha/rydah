@@ -8,7 +8,7 @@ Device credentials are persisted in Android secure storage on the phone, scoped 
 
 ## What the server keeps
 
-By default, one current point per session is retained and there is no route history. Stopping clears its coordinates.
+By default, one current point per session is retained and there is no route history. Stopping clears its coordinates. The current point includes the phone's GPS speed and speed accuracy when available; they are visible through the private link and, for group shares, to current members, and are cleared with the coordinates on stop, removal, leaving and group deletion (trail points never include speed).
 
 A trail is opt-in per share and off by default. With it on, the server also keeps recent points, thinned to one per 10 seconds, only within the chosen window (15 minutes, 30 minutes, or the whole session). They are visible only through the private link and, for group shares, to current group members. Stop, member removal, leaving and group deletion delete them immediately; after expiry they are unreadable and are removed with the session by the hourly cleanup. Device sessions expire after their chosen 30, 60, 120 or 240 minutes; the legacy creator/simulator route still uses one hour. Reads and writes after expiry return 410 without coordinates.
 

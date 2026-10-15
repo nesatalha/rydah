@@ -8,9 +8,19 @@ class ShareSession {
 }
 
 class GeoPoint {
-  GeoPoint(this.lat, this.lon, this.accuracyM, this.observedAt);
+  GeoPoint(
+    this.lat,
+    this.lon,
+    this.accuracyM,
+    this.observedAt, {
+    this.speedMps,
+    this.speedAccuracyMps,
+  });
   final double lat, lon, accuracyM;
   final DateTime observedAt;
+
+  /// GPS speed and its accuracy in m/s; null when the phone doesn't report them.
+  final double? speedMps, speedAccuracyMps;
 }
 
 class SharingApiException implements Exception {
@@ -71,6 +81,9 @@ class SharingApi {
       'lon': point.lon,
       'accuracyM': point.accuracyM,
       'observedAt': point.observedAt.millisecondsSinceEpoch,
+      if (point.speedMps != null) 'speedMps': point.speedMps,
+      if (point.speedAccuracyMps != null)
+        'speedAccuracyMps': point.speedAccuracyMps,
     });
   }
 

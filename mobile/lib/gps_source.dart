@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
+import 'meeting_eta.dart';
 import 'sharing_api.dart';
 
 class GpsSource {
@@ -46,7 +47,17 @@ class GpsSource {
           ),
         ).listen(
           (p) => _controller.add(
-            GeoPoint(p.latitude, p.longitude, p.accuracy, p.timestamp),
+            GeoPoint(
+              p.latitude,
+              p.longitude,
+              p.accuracy,
+              p.timestamp,
+              speedMps: gpsSpeed(hasSpeed: p.hasSpeed, speed: p.speed),
+              speedAccuracyMps: gpsSpeedAccuracy(
+                hasSpeedAccuracy: p.hasSpeedAccuracy,
+                accuracy: p.speedAccuracy,
+              ),
+            ),
           ),
           onError: _controller.addError,
         );

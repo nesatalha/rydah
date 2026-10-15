@@ -29,6 +29,15 @@ Install the debug APK, open **Settings**, and set the backend URL to `http://loc
 
 The start-sharing dialog has a **Trail** option: **Off** (default), **Last 15 minutes**, **Last 30 minutes** or **Whole session**. With a trail, the private-link viewer and, for group shares, the Group tab draw your recent path as a line that fades with age. **Fit group / recenter** still fits only current positions and the meeting point.
 
+## Meeting ETA
+
+When the group has a meeting point, the Group tab shows each sharing member's distance and ETA, in the roster and the marker tooltip, plus a summary such as **1 of 3 arrived • next: Ada ~6 min**. The phone uploads its GPS speed with each point; the private-link viewer shows it as **Speed 48 km/h**.
+
+- Distance is a straight line; ETA = distance × 1.3 (to approximate roads) ÷ speed, e.g. **~12 min • 8.0 km**.
+- Within 200 m of the meeting point is **Arrived**, even if the member's updates have gone quiet.
+- Below 5 km/h is **Stopped**; a position older than 20 seconds (stale or offline) shows **Offline • 8.0 km**; no speed (older app) or an ETA over 3 hours shows distance only.
+- Speed is the median of the member's last three uploaded readings, so one stop at a light doesn't flip to Stopped. Speed accuracy worse than ±5 m/s is still used, marked **(rough)** in the app and **(low accuracy)** on the viewer.
+
 ## Foreground limits
 
 Keep the sender app open. A foreground location notification is enabled where Android permits it, but background tracking is not guaranteed. Battery controls, permissions, backgrounding and connectivity can interrupt updates. There is no background-location permission. **Stop sharing** shows confirmation only after the server clears the stored point; on failure it retains the stop credential and offers retry.

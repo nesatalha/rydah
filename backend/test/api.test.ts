@@ -26,7 +26,7 @@ before(async () => {
         modules: true, script: 'export default {fetch(){return new Response("ok")}}', d1Databases: { DB: 'test' }
     });
     db = await mf.getD1Database('DB') as unknown as D1Database;
-    for (const migration of ['0001_sessions.sql', '0002_private_groups.sql', '0003_session_trails.sql'])
+    for (const migration of ['0001_sessions.sql', '0002_private_groups.sql', '0003_session_trails.sql', '0004_session_speed.sql'])
         await db.exec(await readFile(`migrations/${migration}`, 'utf8'));
 });
 after(async () => {
@@ -84,4 +84,12 @@ test('concurrent stop and upload never resurrect coordinates', async () => {
     const data: any = await (await call(`/api/sessions/${s.id}`, 'GET', s.readToken)).json();
     assert.equal(data.state, 'ended');
     assert.equal(data.location, null);
+});
+test('legacy creator session upload works with and without speedMps', async () => {
+    const s = await create();
+    assert.equal((await upload(s, 1)).status, 200);
+    const r = await call(`/api/sessions/${s.id}/location`, 'PUT', s.writeToken, { seq: 2, lat: 41, lon: 29, accuracyM: 8, observedAt: Date.now(), speedMps: 9.5 });
+    assert.equal(r.status, 200);
+    const read = await (await call(`/api/sessions/${s.id}`, 'GET', s.readToken)).json() as any;
+    assert.equal(read.location.speedMps, 9.5);
 });

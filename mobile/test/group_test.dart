@@ -268,4 +268,72 @@ void main() {
       }),
     );
   });
+  test(
+    'group refresh smooths member speed across polls, computes ETA to the meeting point and drops speed when member stops sharing',
+    () async {
+      var now = DateTime.fromMillisecondsSinceEpoch(1000000);
+      final a = DeviceAccount(
+        'https://friends.example',
+        'me',
+        'secret',
+        enrolled: true,
+      );
+      final speeds = <double?>[13.89, 13.89, 0, null];
+      var call = 0;
+      await http.runWithClient(
+        () async {
+          final c = GroupController(GroupApi(a), now: () => now);
+          for (var i = 0; i < 3; i++) {
+            await c.refresh();
+            now = now.add(const Duration(seconds: 5));
+          }
+          final eta = c.memberEta(c.members.first)!;
+          expect(eta.kind.name, 'moving');
+          expect(c.etaSummary, '0 of 1 arrived • next: Ada ~12 min');
+          await c.refresh();
+          expect(c.memberEta(c.members.first)!.kind.name, 'distanceOnly');
+          c.dispose();
+        },
+        () => MockClient((r) async {
+          final i = call++;
+          final at = 1000000 + i * 5000;
+          return http.Response(
+            jsonEncode({
+              'id': 'group',
+              'name': 'Friends',
+              'role': 'member',
+              'meetingPoint': {
+                'lat': 41.0,
+                'lon': 29.0,
+                'label': 'Cafe',
+                'updatedAt': 1,
+                'updatedBy': 'me',
+              },
+              'members': [
+                {
+                  'deviceId': 'peer',
+                  'name': 'Ada',
+                  'avatarVersion': null,
+                  'sharing': {
+                    'state': 'live',
+                    'expiresAt': 2000000,
+                    'location': {
+                      'lat': 41.0 + 8000 / 111195,
+                      'lon': 29.0,
+                      'accuracyM': 5,
+                      'speedMps': speeds[i],
+                      'speedAccuracyMps': speeds[i] == null ? null : 1,
+                      'observedAt': at,
+                      'receivedAt': at,
+                    },
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+    },
+  );
 }
