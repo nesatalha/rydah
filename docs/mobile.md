@@ -25,6 +25,10 @@ adb reverse tcp:8787 tcp:8787
 
 Install the debug APK, open **Settings**, and set the backend URL to `http://localhost:8787`. That URL is forwarded from the phone to the development computer. A viewer on the same computer uses localhost; a different person's browser needs a shared reachable backend. Alternatively, use the computer's LAN IP from a phone on the same Wi-Fi network, or point the app at the deployed backend (see [deployment.md](deployment.md#point-the-app-at-the-deployed-backend)).
 
+## Trail
+
+The start-sharing dialog has a **Trail** option: **Off** (default), **Last 15 minutes**, **Last 30 minutes** or **Whole session**. With a trail, the private-link viewer and, for group shares, the Group tab draw your recent path as a line that fades with age. **Fit group / recenter** still fits only current positions and the meeting point.
+
 ## Foreground limits
 
 Keep the sender app open. A foreground location notification is enabled where Android permits it, but background tracking is not guaranteed. Battery controls, permissions, backgrounding and connectivity can interrupt updates. There is no background-location permission. **Stop sharing** shows confirmation only after the server clears the stored point; on failure it retains the stop credential and offers retry.

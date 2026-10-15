@@ -8,11 +8,13 @@ Device credentials are persisted in Android secure storage on the phone, scoped 
 
 ## What the server keeps
 
-One current point per session is retained; there is no route history. Stopping clears its coordinates. Device sessions expire after their chosen 30, 60, 120 or 240 minutes; the legacy creator/simulator route still uses one hour. Reads and writes after expiry return 410 without coordinates.
+By default, one current point per session is retained and there is no route history. Stopping clears its coordinates.
 
-The hourly scheduled cleanup deletes expired session rows, retaining a last point for at most roughly one hour beyond its expiry when the deployed schedule runs. Used session IDs remain as location-free replay protection. Consumed invitations keep only their hashed enrollment receipt. Profile photos are stored privately in D1 and served only through authenticated endpoints.
+A trail is opt-in per share and off by default. With it on, the server also keeps recent points, thinned to one per 10 seconds, only within the chosen window (15 minutes, 30 minutes, or the whole session). They are visible only through the private link and, for group shares, to current group members. Stop, member removal, leaving and group deletion delete them immediately; after expiry they are unreadable and are removed with the session by the hourly cleanup. Device sessions expire after their chosen 30, 60, 120 or 240 minutes; the legacy creator/simulator route still uses one hour. Reads and writes after expiry return 410 without coordinates.
 
-Local development does not automatically run cron. To manually delete expired local rows:
+The hourly scheduled cleanup deletes expired session rows, retaining a last point for at most roughly one hour beyond its expiry when the deployed schedule runs. Used session IDs remain as location-free replay protection; a sweep also removes any trail point whose session is no longer active. Consumed invitations keep only their hashed enrollment receipt. Profile photos are stored privately in D1 and served only through authenticated endpoints.
+
+Local development does not automatically run cron. To manually delete expired local rows (their trail points are deleted with them):
 
 ```bash
 cd backend

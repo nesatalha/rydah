@@ -1,6 +1,6 @@
 # Location Trail ("Recent Path") Implementation Plan
 
-> **Status:** Approved 2026-10-15 (10 s thinning; Fit group unchanged). Branch `feature/location-trail` from `develop`.
+> **Status:** Implemented on `feature/location-trail` (approved 2026-10-15: 10 s thinning; Fit group unchanged). Branch `feature/location-trail` from `develop`.
 
 **Goal:** When starting a share, a rider can pick a trail setting: **Off (default) / 15 min / 30 min / Whole session**. The private browser viewer and the in-app Group map then draw the rider's recent path as a polyline that fades with age. The server keeps only points inside the chosen window and deletes them at exactly the moments it already clears the current point.
 
