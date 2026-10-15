@@ -1,6 +1,6 @@
 # Deployment
 
-The backend runs as a Cloudflare Worker named `rydah` with static assets from `backend/public/` and a D1 database named `rydah` (configured in `backend/wrangler.jsonc`). As of 2026-10-15, migrations `0001_sessions.sql` and `0002_private_groups.sql` are applied to the remote database (`0003_session_trails.sql` and `0004_session_speed.sql` must be applied, in order, before deploying the trail and speed features) and a `CREATOR_KEY` secret is set. An hourly cron trigger (`0 * * * *`) runs the scheduled cleanup.
+The backend runs as a Cloudflare Worker named `rydah` with static assets from `backend/public/` and a D1 database named `rydah` (configured in `backend/wrangler.jsonc`). As of 2026-10-15, all four migrations (`0001_sessions.sql` through `0004_session_speed.sql`) are applied to the remote database and a `CREATOR_KEY` secret is set. The deployed Worker predates the trail and speed features; it runs unchanged on this schema until the next deploy. An hourly cron trigger (`0 * * * *`) runs the scheduled cleanup.
 
 The public URL is intentionally not listed in this repository.
 
