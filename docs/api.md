@@ -4,7 +4,7 @@ Examples use the local backend at `http://localhost:8787` and the local creator 
 
 ## Migrations
 
-Apply both local migrations with `npx wrangler d1 migrations apply rydah --local`. Migration `0001_sessions.sql` remains unchanged; `0002_private_groups.sql` adds devices, profiles, private groups, invitations and sharing audiences.
+Apply all local migrations with `npx wrangler d1 migrations apply rydah --local`. Migration `0001_sessions.sql` remains unchanged; `0002_private_groups.sql` adds devices, profiles, private groups, invitations and sharing audiences; `0003_session_trails.sql` adds the optional trail setting and trail points.
 
 ## Bootstrap a private group
 
@@ -42,7 +42,22 @@ A device that only shares private links registers itself without an invitation: 
 
 Use the device token for `/api/me`, `/api/group`, and `POST /api/me/sessions`. Session creation accepts locally persisted `{id,readToken,writeToken,audience,durationMinutes}`; `audience` is `viewer` or `group`, and durations are 30, 60, 120 or 240 minutes (default 60). Only one session per device is active. Exact retries preserve its original expiry; a stopped, expired or conflicting session ID cannot start a new share. Viewer shares appear only through their private read link; group shares also appear in the member roster. A device can start a viewer share after leaving a group. Removal, leaving, or group deletion immediately ends all sessions that existed for the affected device.
 
-The legacy creator-key route `POST /api/sessions` (used by the simulator) still creates one-hour sessions.
+The legacy creator-key route `POST /api/sessions` (used by the simulator) still creates one-hour sessions without a trail.
+
+## Trails
+
+Session creation also accepts `trail`: `off` (default when absent), `15m`, `30m` or `session`. It is part of exact-retry matching (a different value returns 409) and is echoed in the response. With a trail, each accepted upload also stores at most one trail point per 10 seconds; points outside the chosen window are pruned, and every point is deleted when the session ends or is deleted.
+
+Reads return a `trail` field, `null` when off or ended:
+
+```json
+{ "setting": "15m|30m|session", "windowStartsAt": 1760000000000, "reset": true,
+  "points": [[seq, lat, lon, observedAt]] }
+```
+
+- `GET /api/sessions/:id?since=<seq>` returns only points after `seq`. Without `since`, `reset` is true and the client replaces its cache. `since` must be up to 15 digits.
+- `GET /api/group?trailSince=<deviceId>:<expiresAt>:<seq>,...` (at most 32 cursors; send `trailSince=` empty on first load) returns each sharing member's trail in `sharing.trail`. A cursor whose `expiresAt` differs from the member's current session gets the whole window with `reset: true`. Viewer-only shares never appear. Without the `trailSince` parameter (older apps), `sharing.trail` is always `null`.
+- `windowStartsAt` is null for `session`; clients drop cached points older than it.
 
 ## Profiles, photos and group management
 

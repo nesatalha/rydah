@@ -53,7 +53,7 @@ before(async () => {
         modules: true, script: 'export default {fetch(){return new Response("ok")}}', d1Databases: { DB: 'groups' }
     });
     db = await mf.getD1Database('DB') as unknown as D1Database;
-    for (const migration of ['0001_sessions.sql', '0002_private_groups.sql'])
+    for (const migration of ['0001_sessions.sql', '0002_private_groups.sql', '0003_session_trails.sql'])
         await db.exec(await readFile(`migrations/${migration}`, 'utf8'));
 });
 after(async () => {
@@ -235,9 +235,14 @@ test('revocation before a group snapshot never returns a meeting point with an u
             const value = (target as any)[key];
             return typeof value === 'function' ? value.bind(target) : value;
         } });
+    const revoke = () => db.prepare('UPDATE memberships SET revoked_at=? WHERE group_id=? AND device_id=?').bind(Date.now(), g.groupId, d.deviceId).run();
+    // The roster and trails are read in one batch; revoke just before that snapshot runs.
     const racingDb = { prepare(sql: string) {
             return wrap(db.prepare(sql), sql);
-        }, batch: db.batch.bind(db) };
+        }, async batch(statements: D1PreparedStatement[]) {
+            await revoke();
+            return db.batch(statements);
+        } };
     const response = await worker.fetch(new Request('https://demo.test/api/group', { headers: { Authorization: `Bearer ${d.deviceToken}` } }), { DB: racingDb, CREATOR_KEY: 'test-key' } as any);
     assert.equal(response.status, 403);
     assert.doesNotMatch(await response.text(), /Private cafe/);

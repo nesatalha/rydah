@@ -12,12 +12,14 @@ class LocationSender extends ChangeNotifier {
     this.accountStore,
     this.audience = 'viewer',
     this.durationMinutes = 60,
+    this.trail = 'off',
     this.cadence = const Duration(seconds: 5),
   });
   final SharingApi api;
   final AccountStore? accountStore;
   String audience;
   int durationMinutes;
+  String trail;
   DeviceAccount? get account =>
       api is GroupApi ? (api as GroupApi).account : null;
   bool get hasPending => session != null || account?.pending != null;
@@ -43,6 +45,7 @@ class LocationSender extends ChangeNotifier {
         'writeToken': randomToken(),
         'audience': audience,
         'durationMinutes': durationMinutes,
+        'trail': trail,
         'backend': api.base,
         'stop': false,
       };
@@ -56,8 +59,10 @@ class LocationSender extends ChangeNotifier {
         'writeToken',
         'audience',
         'durationMinutes',
+        'trail',
       ])
-        k: draft[k],
+        // Pending records from older versions have no trail; replay them unchanged.
+        if (draft.containsKey(k)) k: draft[k],
     });
     draft['expiresAt'] = result.expiresAt.millisecondsSinceEpoch;
     await _persist();

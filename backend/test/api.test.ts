@@ -26,7 +26,7 @@ before(async () => {
         modules: true, script: 'export default {fetch(){return new Response("ok")}}', d1Databases: { DB: 'test' }
     });
     db = await mf.getD1Database('DB') as unknown as D1Database;
-    for (const migration of ['0001_sessions.sql', '0002_private_groups.sql'])
+    for (const migration of ['0001_sessions.sql', '0002_private_groups.sql', '0003_session_trails.sql'])
         await db.exec(await readFile(`migrations/${migration}`, 'utf8'));
 });
 after(async () => {
