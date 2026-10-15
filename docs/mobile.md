@@ -35,7 +35,7 @@ When the group has a meeting point, the Group tab shows each sharing member's di
 
 - Distance is a straight line; ETA = distance × 1.3 (to approximate roads) ÷ speed, e.g. **~12 min • 8.0 km**.
 - Within 200 m of the meeting point is **Arrived**, even if the member's updates have gone quiet.
-- Below 5 km/h is **Stopped**; a stale or offline position shows **Offline • 8.0 km**; no speed (older app) or an ETA over 3 hours shows distance only.
+- Below 5 km/h is **Stopped**; a position older than 20 seconds (stale or offline) shows **Offline • 8.0 km**; no speed (older app) or an ETA over 3 hours shows distance only.
 - Speed is the median of the member's last three uploaded readings, so one stop at a light doesn't flip to Stopped. Speed accuracy worse than ±5 m/s is still used, marked **(rough)** in the app and **(low accuracy)** on the viewer.
 
 ## Foreground limits

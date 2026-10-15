@@ -106,8 +106,11 @@ SpeedBuffer pushSpeedSample(
       ? buffer!.samples
       : const <SpeedSample>[];
   if (previous.isNotEmpty && next.at <= previous.last.at) return buffer!;
+  // An unknown reading is kept alone, so known speeds never mix with it.
   if (next.speed == null ||
-      (previous.isNotEmpty && next.at - previous.last.at > _speedMaxGapMs)) {
+      (previous.isNotEmpty &&
+          (previous.last.speed == null ||
+              next.at - previous.last.at > _speedMaxGapMs))) {
     return SpeedBuffer(expiresAt, [next]);
   }
   final samples = [...previous, next];

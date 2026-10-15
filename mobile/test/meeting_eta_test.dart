@@ -148,4 +148,14 @@ void main() {
       );
     },
   );
+  test(
+    'unknown speed followed by a real reading starts a fresh buffer without crashing',
+    () {
+      var b = pushSpeedSample(null, const SpeedSample(1000, null, null), 9);
+      expect(smoothedSpeed(b), isNull);
+      b = pushSpeedSample(b, const SpeedSample(5000, 3, 1), 9);
+      expect(b.samples, hasLength(1));
+      expect(smoothedSpeed(b)!.speed, 3);
+    },
+  );
 }
