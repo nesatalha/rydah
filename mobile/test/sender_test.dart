@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -240,4 +241,28 @@ void main() {
       sender.dispose();
     },
   );
+  test('upload sends speedMps when known and omits it when null', () async {
+    final bodies = <Map<String, dynamic>>[];
+    await http.runWithClient(
+      () async {
+        final api = SharingApi('https://friends.example', 'key');
+        final s = ShareSession('id', 'write', 'read', DateTime(2100));
+        final at = DateTime.fromMillisecondsSinceEpoch(1000);
+        await api.upload(
+          s,
+          1,
+          GeoPoint(41, 29, 5, at, speedMps: 13.4, speedAccuracyMps: 1.5),
+        );
+        await api.upload(s, 2, GeoPoint(41, 29, 5, at));
+      },
+      () => MockClient((r) async {
+        bodies.add((jsonDecode(r.body) as Map).cast<String, dynamic>());
+        return http.Response('{"accepted":true}', 200);
+      }),
+    );
+    expect(bodies[0]['speedMps'], 13.4);
+    expect(bodies[0]['speedAccuracyMps'], 1.5);
+    expect(bodies[1].containsKey('speedMps'), isFalse);
+    expect(bodies[1].containsKey('speedAccuracyMps'), isFalse);
+  });
 }

@@ -1,6 +1,6 @@
 # Meeting-Point ETA Implementation Plan
 
-> **Status:** Approved 2026-10-15. Branch `feature/meeting-eta` from `develop`.
+> **Status:** Implemented on `feature/meeting-eta` (approved 2026-10-15). Branch `feature/meeting-eta` from `develop`.
 
 **Goal:** The phone uploads its GPS speed with each location point. The server keeps it only on the session's current point and clears it on every end path. Both the private viewer and the group roster return it; the viewer shows "Speed 48 km/h". The Group tab shows each sharing member's distance and ETA to the meeting point, plus a one-line summary above the map.
 
