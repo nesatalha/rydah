@@ -18,7 +18,7 @@ npx wrangler d1 migrations apply rydah --remote
 npx wrangler deploy
 ```
 
-Apply new migrations before deploying code that depends on them. Never edit a migration that is already applied; add a new numbered file instead.
+Apply new migrations before deploying code that depends on them. This is mandatory for `0003_session_trails.sql`: the trail-aware Worker writes to `session_points` on every upload and in the cron, so deploying it first breaks all location updates, not only trails. Applying the migration while the old Worker still runs is safe. Never edit a migration that is already applied; add a new numbered file instead.
 
 ## First-time setup on a new account
 

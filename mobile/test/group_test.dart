@@ -183,7 +183,7 @@ void main() {
         () async {
           final c = GroupController(GroupApi(a), now: () => now);
           await c.refresh();
-          expect(queries.last, isNull);
+          expect(queries.last, '');
           expect(c.trails['peer']!.points.map((p) => p.seq), [1, 2]);
           await c.refresh();
           expect(queries.last, 'peer:1100000:2');

@@ -111,7 +111,9 @@ export async function groups(request: Request, env: Env, path: string): Promise<
     if (path === '/api/group') {
         if (request.method === 'GET') {
             // The caller, group metadata, roster, locations and trails share one SQLite snapshot.
-            const cursors = trailCursors(new URL(request.url).searchParams.get('trailSince'));
+            // Trails are opt-in: older apps poll without trailSince and must not receive every member's window.
+            const since = new URL(request.url).searchParams.get('trailSince');
+            const cursors = since === null ? null : trailCursors(since);
             const [roster, trailRows] = await env.DB.batch<any>([env.DB.prepare(`
     SELECT g.id AS group_id,g.name AS group_name,g.meeting_lat,g.meeting_lon,
       g.meeting_label,g.meeting_updated_at,g.meeting_updated_by,caller.role AS caller_role,
@@ -123,7 +125,7 @@ export async function groups(request: Request, env: Env, path: string): Promise<
     LEFT JOIN sessions s ON s.device_id=d.id AND s.group_id=g.id
       AND s.audience='group' AND s.ended=0 AND s.expires_at>?
     WHERE g.id=? AND g.revoked_at IS NULL ORDER BY d.created_at,d.id
-   `).bind(d.id, now, m.group_id), env.DB.prepare(`
+   `).bind(d.id, now, m.group_id), ...cursors === null ? [] : [env.DB.prepare(`
     SELECT s.device_id,p.seq,p.lat,p.lon,p.observed_at
     FROM sessions s
     JOIN groups g ON g.id=s.group_id AND g.revoked_at IS NULL
@@ -134,9 +136,9 @@ export async function groups(request: Request, env: Env, path: string): Promise<
     WHERE g.id=? AND s.audience='group' AND s.ended=0 AND s.expires_at>? AND s.trail<>'off'
       AND ${trailWindowSQL('s', 'p')} AND p.seq>COALESCE(json_extract(c.value,'$[1]'),0)
     ORDER BY s.device_id,p.seq
-   `).bind(d.id, JSON.stringify(cursors), m.group_id, now, now)]);
+   `).bind(d.id, JSON.stringify(cursors), m.group_id, now, now)]]);
             const trails = new Map<string, TrailPoint[]>();
-            for (const p of trailRows.results) {
+            for (const p of trailRows?.results ?? []) {
                 trails.set(p.device_id, [...trails.get(p.device_id) ?? [], [p.seq, p.lat, p.lon, p.observed_at]]);
             }
             const g = roster.results[0];
@@ -151,7 +153,7 @@ export async function groups(request: Request, env: Env, path: string): Promise<
                 members: roster.results.map(row => ({
                     deviceId: row.member_device_id, name: row.name, avatarVersion: row.avatar_version, sharing: row.expires_at ? {
                         ...sharing(row as Session, now),
-                        trail: trailOutput(row.trail, row.ended, trails.get(row.member_device_id) ?? [], cursors[row.member_device_id]?.[0] !== row.expires_at, now)
+                        trail: cursors === null ? null : trailOutput(row.trail, row.ended, trails.get(row.member_device_id) ?? [], cursors[row.member_device_id]?.[0] !== row.expires_at, now)
                     } : null
                 }))
             });

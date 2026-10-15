@@ -156,7 +156,7 @@ test('group roster returns incremental trails per member with expiresAt cursor',
     await upload(a, now - 50000, 40.1);
     await upload(a, now - 30000, 40.2);
     await upload(b, now - 30000, 50.1);
-    const first = await data(await call('/api/group', 'GET', member.deviceToken));
+    const first = await data(await call('/api/group?trailSince=', 'GET', member.deviceToken));
     const byId = (r: any, id: string) => r.members.find((m: any) => m.deviceId === id).sharing.trail;
     assert.equal(byId(first, g.owner.deviceId).reset, true);
     assert.equal(byId(first, g.owner.deviceId).points.length, 2);
@@ -175,7 +175,7 @@ test('group roster returns incremental trails per member with expiresAt cursor',
     await call(`/api/sessions/${b.id}`, 'DELETE', b.writeToken);
     const viewerOnly = await share(member, 'viewer', 'session');
     await upload(viewerOnly);
-    const isolated = await data(await call('/api/group', 'GET', g.owner.deviceToken));
+    const isolated = await data(await call('/api/group?trailSince=', 'GET', g.owner.deviceToken));
     assert.equal(isolated.members.find((m: any) => m.deviceId === member.deviceId).sharing, null);
     assert.doesNotMatch(JSON.stringify(isolated), new RegExp(viewerOnly.id));
     assert.equal((await call('/api/group?trailSince=bad', 'GET', member.deviceToken)).status, 400);
@@ -186,8 +186,24 @@ test('trail off members have null trail in the roster', async () => {
     const g = await group();
     const s = await share(g.owner, 'group');
     await upload(s);
-    const roster = await data(await call('/api/group', 'GET', g.owner.deviceToken));
+    const roster = await data(await call('/api/group?trailSince=', 'GET', g.owner.deviceToken));
     assert.equal(roster.members[0].sharing.trail, null);
+});
+test('roster without trailSince (older apps) returns no trails; inflated cursors only narrow the reply', async () => {
+    const g = await group();
+    const member = await join(g);
+    const s = await share(g.owner, 'group', 'session');
+    await upload(s, Date.now() - 20000);
+    const legacy = await data(await call('/api/group', 'GET', member.deviceToken));
+    assert.equal(legacy.members[0].sharing.trail, null);
+    assert.ok(legacy.members[0].sharing.location);
+    const inflated = await data(await call(`/api/group?trailSince=${g.owner.deviceId}:${s.expiresAt}:999999`, 'GET', member.deviceToken));
+    assert.deepEqual(inflated.members[0].sharing.trail.points, []);
+    assert.equal(inflated.members[0].sharing.trail.reset, false);
+    const proto = await data(await call('/api/group?trailSince=__proto__:1:1', 'GET', member.deviceToken));
+    assert.equal(proto.members[0].sharing.trail.points.length, 1);
+    const ahead = await data(await read(s, '?since=999999'));
+    assert.deepEqual(ahead.trail.points, []);
 });
 test('migration 0003 preserves existing session rows', async () => {
     const local = new Miniflare({ modules: true, script: 'export default {fetch(){return new Response("ok")}}', d1Databases: { DB: 'migrate' } });

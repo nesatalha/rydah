@@ -56,7 +56,7 @@ Reads return a `trail` field, `null` when off or ended:
 ```
 
 - `GET /api/sessions/:id?since=<seq>` returns only points after `seq`. Without `since`, `reset` is true and the client replaces its cache. `since` must be up to 15 digits.
-- `GET /api/group?trailSince=<deviceId>:<expiresAt>:<seq>,...` (at most 32 cursors) returns each sharing member's trail in `sharing.trail`. A cursor whose `expiresAt` differs from the member's current session gets the whole window with `reset: true`. Viewer-only shares never appear.
+- `GET /api/group?trailSince=<deviceId>:<expiresAt>:<seq>,...` (at most 32 cursors; send `trailSince=` empty on first load) returns each sharing member's trail in `sharing.trail`. A cursor whose `expiresAt` differs from the member's current session gets the whole window with `reset: true`. Viewer-only shares never appear. Without the `trailSince` parameter (older apps), `sharing.trail` is always `null`.
 - `windowStartsAt` is null for `session`; clients drop cached points older than it.
 
 ## Profiles, photos and group management

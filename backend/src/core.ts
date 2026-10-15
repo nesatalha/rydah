@@ -57,10 +57,10 @@ export const cursor = (value: string | null) => {
     }
     return Number(value);
 };
-// trailSince=<deviceId>:<expiresAt>:<seq>,... -> {deviceId: [expiresAt, seq]}
-export function trailCursors(value: string | null): Record<string, [number, number]> {
-    const result: Record<string, [number, number]> = {};
-    if (value === null || value === '') {
+// trailSince=<deviceId>:<expiresAt>:<seq>,... -> {deviceId: [expiresAt, seq]}; keys are client input, so no prototype.
+export function trailCursors(value: string): Record<string, [number, number]> {
+    const result: Record<string, [number, number]> = Object.create(null);
+    if (value === '') {
         return result;
     }
     const entries = value.split(',');

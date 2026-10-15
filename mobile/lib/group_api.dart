@@ -53,11 +53,11 @@ class GroupApi extends SharingApi {
     '/api/devices',
     {'deviceId': account.deviceId, 'deviceToken': key, 'name': name},
   );
-  Future<Map<String, dynamic>> group({String? trailSince}) => json(
+
+  /// Trails are opt-in on the server; an empty [trailSince] requests full windows.
+  Future<Map<String, dynamic>> group({String trailSince = ''}) => json(
     'GET',
-    trailSince == null || trailSince.isEmpty
-        ? '/api/group'
-        : '/api/group?trailSince=${Uri.encodeQueryComponent(trailSince)}',
+    '/api/group?trailSince=${Uri.encodeQueryComponent(trailSince)}',
   );
   Future<Map<String, dynamic>> me() => json('GET', '/api/me');
   Future<void> profile(String name) async {
