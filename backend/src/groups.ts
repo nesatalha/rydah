@@ -1,4 +1,4 @@
-import { body, bearer, creator, Device, device, empty, Env, fail, hash, json, membership, photo, profile, requireMember, secret, Session, sharing, text, validId, validToken, coordinates } from './core.js';
+import { body, bearer, creator, Device, device, empty, Env, fail, hash, json, membership, photo, profile, requireMember, secret, Session, sharing, text, trailCursors, trailOutput, TrailPoint, trailWindowSQL, validId, validToken, coordinates } from './core.js';
 interface Invitation {
     id: string;
     group_id: string;
@@ -110,8 +110,9 @@ export async function groups(request: Request, env: Env, path: string): Promise<
     const d = await device(request, env), m = await requireMember(env, d.id);
     if (path === '/api/group') {
         if (request.method === 'GET') {
-            // The caller, group metadata, roster and locations share one SQLite snapshot.
-            const roster = await env.DB.prepare(`
+            // The caller, group metadata, roster, locations and trails share one SQLite snapshot.
+            const cursors = trailCursors(new URL(request.url).searchParams.get('trailSince'));
+            const [roster, trailRows] = await env.DB.batch<any>([env.DB.prepare(`
     SELECT g.id AS group_id,g.name AS group_name,g.meeting_lat,g.meeting_lon,
       g.meeting_label,g.meeting_updated_at,g.meeting_updated_by,caller.role AS caller_role,
       d.id AS member_device_id,d.name,d.avatar_version,s.*
@@ -122,7 +123,22 @@ export async function groups(request: Request, env: Env, path: string): Promise<
     LEFT JOIN sessions s ON s.device_id=d.id AND s.group_id=g.id
       AND s.audience='group' AND s.ended=0 AND s.expires_at>?
     WHERE g.id=? AND g.revoked_at IS NULL ORDER BY d.created_at,d.id
-   `).bind(d.id, now, m.group_id).all<any>();
+   `).bind(d.id, now, m.group_id), env.DB.prepare(`
+    SELECT s.device_id,p.seq,p.lat,p.lon,p.observed_at
+    FROM sessions s
+    JOIN groups g ON g.id=s.group_id AND g.revoked_at IS NULL
+    JOIN memberships caller ON caller.group_id=g.id AND caller.device_id=? AND caller.revoked_at IS NULL
+    JOIN memberships member ON member.group_id=g.id AND member.device_id=s.device_id AND member.revoked_at IS NULL
+    JOIN session_points p ON p.session_id=s.id
+    LEFT JOIN json_each(?) c ON c.key=s.device_id AND json_extract(c.value,'$[0]')=s.expires_at
+    WHERE g.id=? AND s.audience='group' AND s.ended=0 AND s.expires_at>? AND s.trail<>'off'
+      AND ${trailWindowSQL('s', 'p')} AND p.seq>COALESCE(json_extract(c.value,'$[1]'),0)
+    ORDER BY s.device_id,p.seq
+   `).bind(d.id, JSON.stringify(cursors), m.group_id, now, now)]);
+            const trails = new Map<string, TrailPoint[]>();
+            for (const p of trailRows.results) {
+                trails.set(p.device_id, [...trails.get(p.device_id) ?? [], [p.seq, p.lat, p.lon, p.observed_at]]);
+            }
             const g = roster.results[0];
             if (!g) {
                 fail('Group unavailable', 403);
@@ -133,7 +149,10 @@ export async function groups(request: Request, env: Env, path: string): Promise<
                     lat: g.meeting_lat, lon: g.meeting_lon, label: g.meeting_label, updatedAt: g.meeting_updated_at, updatedBy: g.meeting_updated_by
                 },
                 members: roster.results.map(row => ({
-                    deviceId: row.member_device_id, name: row.name, avatarVersion: row.avatar_version, sharing: row.expires_at ? sharing(row as Session, now) : null
+                    deviceId: row.member_device_id, name: row.name, avatarVersion: row.avatar_version, sharing: row.expires_at ? {
+                        ...sharing(row as Session, now),
+                        trail: trailOutput(row.trail, row.ended, trails.get(row.member_device_id) ?? [], cursors[row.member_device_id]?.[0] !== row.expires_at, now)
+                    } : null
                 }))
             });
         }

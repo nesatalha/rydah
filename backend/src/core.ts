@@ -32,6 +32,49 @@ export interface Session {
     group_id: string | null;
     audience: 'viewer' | 'group';
     duration_minutes: number;
+    trail: Trail;
+}
+export type Trail = 'off' | '15m' | '30m' | 'session';
+export const TRAILS: Trail[] = ['off', '15m', '30m', 'session'];
+export const TRAIL_MIN_INTERVAL_MS = 10000;
+const TRAIL_WINDOW_MS: Record<Trail, number | null> = { off: null, '15m': 900000, '30m': 1800000, session: null };
+// Points older than the window are hidden on read even before an upload prunes them. Expects `?` bound to now.
+export const trailWindowSQL = (s: string, p: string) => `(${s}.trail='session' OR ${p}.observed_at >= ? - CASE ${s}.trail WHEN '15m' THEN 900000 ELSE 1800000 END)`;
+export type TrailPoint = [number, number, number, number];
+export function trailOutput(setting: Trail, ended: number, points: TrailPoint[], reset: boolean, now: number) {
+    if (setting === 'off' || ended) {
+        return null;
+    }
+    const window = TRAIL_WINDOW_MS[setting];
+    return { setting, windowStartsAt: window === null ? null : now - window, reset, points };
+}
+export const cursor = (value: string | null) => {
+    if (value === null || value === '') {
+        return 0;
+    }
+    if (!/^\d{1,15}$/.test(value)) {
+        fail('Invalid trail cursor', 400);
+    }
+    return Number(value);
+};
+// trailSince=<deviceId>:<expiresAt>:<seq>,... -> {deviceId: [expiresAt, seq]}
+export function trailCursors(value: string | null): Record<string, [number, number]> {
+    const result: Record<string, [number, number]> = {};
+    if (value === null || value === '') {
+        return result;
+    }
+    const entries = value.split(',');
+    if (entries.length > 32) {
+        fail('Too many trail cursors', 400);
+    }
+    for (const entry of entries) {
+        const m = entry.match(/^([A-Za-z0-9_-]{1,128}):(\d{1,15}):(\d{1,15})$/);
+        if (!m) {
+            fail('Invalid trail cursor', 400);
+        }
+        result[m[1]] = [Number(m[2]), Number(m[3])];
+    }
+    return result;
 }
 export class HttpError extends Error {
     constructor(message: string, public status: number) {
