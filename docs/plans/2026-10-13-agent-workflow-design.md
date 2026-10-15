@@ -1,5 +1,7 @@
 # Agent Workflow Design
 
+> **Status:** Implemented as the repository's `AGENTS.md`.
+
 Rydah will keep its delivery workflow in a repository-level `AGENTS.md` so new
 Codex threads inherit it automatically. Work starts from `develop` on a focused
 feature branch. Planning, implementation, and review use different agents only

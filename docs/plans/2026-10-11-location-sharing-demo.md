@@ -1,5 +1,7 @@
 # Location Sharing Demo Implementation Plan
 
+> **Status:** Implemented in the initial commit (f8fafb1); later extended by the private riding group work.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Demonstrate an Android phone sharing its latest position with a private browser viewer, with a clearly labeled simulator for immediate local testing.

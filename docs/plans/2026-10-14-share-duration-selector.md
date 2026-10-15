@@ -1,5 +1,7 @@
 # Configurable Share Duration Implementation Plan
 
+> **Status:** Superseded. Merged in PR #2, then replaced in e35c5cc by the deployed device-owned sessions with 30/60/120/240-minute durations.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Let the rider select a private location-sharing duration and enforce that duration on the server.

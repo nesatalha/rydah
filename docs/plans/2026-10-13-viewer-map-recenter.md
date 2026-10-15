@@ -1,5 +1,7 @@
 # Viewer map recenter
 
+> **Status:** Implemented in 33e1864.
+
 **Goal:** Preserve the browser viewer's pan and zoom across live GPS updates, with a small manual recenter button.
 
 **Cause:** `view.js` replaces the OpenStreetMap iframe URL whenever coordinates change, reloading the map and discarding its viewport.
